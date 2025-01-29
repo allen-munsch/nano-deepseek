@@ -18,9 +18,9 @@ from torch.distributed.fsdp import FullyShardedDataParallel as FSDP
 from torch.distributed.fsdp.wrap import transformer_auto_wrap_policy
 
 # Training hyperparameters for faster training
-batch_size = 32    # Smaller batch for CPU
-block_size = 256   # Smaller context window
-max_iters = 1000   # Fewer iterations for testing
+batch_size = 4     # Much smaller batch size
+block_size = 64    # Smaller context window
+max_iters = 100    # Fewer iterations for initial testing
 learning_rate = 3e-4
 min_lr = learning_rate/10
 warmup_iters = 100  # Shorter warmup
@@ -68,12 +68,12 @@ def setup_device():
 def create_config():
     """Create model configuration"""
     return {
-        'n_layer': 12,  # GPT-2 small size
-        'n_head': 12,   # GPT-2 small size
-        'n_embd': 768,  # GPT-2 small size
+        'n_layer': 4,   # Smaller model
+        'n_head': 4,    # Fewer attention heads
+        'n_embd': 128,  # Much smaller embeddings
         'vocab_size': 32000,
         'block_size': block_size,
-        'dropout': 0.1,  # Add some dropout
+        'dropout': 0.1,
     }
 
 def forward(idx, targets, config):
