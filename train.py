@@ -284,7 +284,10 @@ while True:
     # evaluate the loss on train/val sets and write checkpoints
     if iter_num % eval_interval == 0 and master_process:
         losses = estimate_loss()
-        print(f"step {iter_num}: train loss {losses['train']:.4f}, val loss {losses['val']:.4f}")
+        print(f"\nStep {iter_num}:")
+        print(f"Train loss: {losses['train']:.4f}")
+        print(f"Val loss: {losses['val']:.4f}")
+        print(f"Learning rate: {lr:.6f}")
         
         if losses['val'] < best_val_loss or always_save_checkpoint:
             best_val_loss = losses['val']
@@ -340,7 +343,10 @@ while True:
     t0 = t1
     if iter_num % log_interval == 0 and master_process:
         lossf = loss.item() * grad_accum
-        print(f"iter {iter_num}: loss {lossf:.4f}, time {dt*1000:.2f}ms")
+        tokens_processed = iter_num * tokens_per_iter
+        print(f"Iter {iter_num}: loss {lossf:.4f}, time {dt*1000:.2f}ms")
+        print(f"Tokens processed: {tokens_processed:,}")
+        print(f"Training speed: {tokens_per_iter/dt:,.0f} tokens/sec")
 
     iter_num += 1
 
