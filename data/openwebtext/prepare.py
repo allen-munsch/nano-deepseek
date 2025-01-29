@@ -1,3 +1,4 @@
+# copied from nanoGPT karpathy
 """
 Prepare the Shakespeare dataset for character-level language modeling.
 So instead of encoding with GPT-2 BPE tokens, we just map characters to ints.
@@ -12,7 +13,7 @@ import numpy as np
 # download the tiny shakespeare dataset
 input_file_path = os.path.join(os.path.dirname(__file__), 'input.txt')
 if not os.path.exists(input_file_path):
-    data_url = 'https://raw.githubusercontent.com/karpathy/char-rnn/master/data/tinyshakespeare/input.txt'
+    data_url = 'https://gist.githubusercontent.com/allen-munsch/2971dbe7fd31d497e60550f58b377491/raw/d85ed486d0b6046a0b05773ef252c1c2e4153781/input.txt'
     with open(input_file_path, 'w') as f:
         f.write(requests.get(data_url).text)
 
