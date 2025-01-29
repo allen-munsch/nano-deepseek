@@ -11,6 +11,7 @@ from torch.nn import functional as F
 import torch.backends.mps
 from torch.nn.parallel import DistributedDataParallel as DDP
 from torch.distributed import init_process_group, destroy_process_group
+from torch.utils.checkpoint import checkpoint
 import tiktoken
 from torch.cuda.amp import autocast
 from torch.distributed.fsdp import FullyShardedDataParallel as FSDP
@@ -26,6 +27,7 @@ warmup_iters = 2000
 grad_clip = 1.0
 grad_accum = 4
 dtype = 'float16'
+use_checkpoint = True  # Enable activation checkpointing
 # Determine device and precision based on hardware
 if torch.cuda.is_available():
     device_type = 'cuda'
@@ -214,16 +216,23 @@ class ModelWrapper(torch.nn.Module):
         self.head = torch.nn.Linear(config['n_embd'], config['vocab_size'], bias=False)
         self.config = config
     
+    def _forward_impl(self, x, pos_emb):
+        x = self.dropout(x + pos_emb)
+        x = self.ln_f(x)
+        return self.head(x)
+
     def forward(self, idx, targets=None):
         B, T = idx.shape
         # Get token embeddings
         tok_emb = self.token_embedding(idx)
         # Add positional embeddings
         pos_emb = self.position_embedding[:, :T, :]
-        x = self.dropout(tok_emb + pos_emb)
-        # Final layernorm and head
-        x = self.ln_f(x)
-        logits = self.head(x)
+        
+        # Use checkpointing for the forward pass
+        if use_checkpoint and self.training:
+            logits = checkpoint(self._forward_impl, tok_emb, pos_emb)
+        else:
+            logits = self._forward_impl(tok_emb, pos_emb)
         
         if targets is None:
             return logits, None
