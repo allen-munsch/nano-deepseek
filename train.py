@@ -536,12 +536,12 @@ while True:
     if iter_num % eval_interval == 0 and master_process:
         losses = estimate_loss()
         print(f"\nStep {iter_num}:")
-        print(f"Train loss: {losses['train']['loss']:.4f}")
-        print(f"Val loss: {losses['val']['loss']:.4f}")
+        print(f"Train loss: {losses.get('train', {}).get('loss', 0.0):.4f}")
+        print(f"Val loss: {losses.get('val', {}).get('loss', 0.0):.4f}")
         print(f"Learning rate: {lr:.6f}")
         
         # Early stopping check
-        early_stopping_history.append(losses['val'])
+        early_stopping_history.append(val_loss)
         if len(early_stopping_history) > early_stopping_patience:
             recent_best = min(early_stopping_history[-early_stopping_patience:])
             if losses['val'] > recent_best - early_stopping_threshold:
@@ -552,9 +552,10 @@ while True:
             early_stopping_history.pop(0)  # Remove oldest loss
             
         # Save best model checkpoint
-        if losses['val']['loss'] < best_val_loss:
-            improvement = best_val_loss - losses['val']['loss']
-            best_val_loss = losses['val']
+        val_loss = losses.get('val', {}).get('loss', float('inf'))
+        if val_loss < best_val_loss:
+            improvement = best_val_loss - val_loss
+            best_val_loss = val_loss
             if iter_num > 0:
                 checkpoint = {
                     'model_state_dict': model.state_dict(),
