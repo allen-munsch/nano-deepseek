@@ -23,6 +23,7 @@ def load_encoder():
         meta = pickle.load(f)
     return meta['stoi'], meta['itos']
 
+
 def generate(model, start_text, max_tokens=100, temperature=0.8):
     """Generate text starting from start_text"""
     # Load encoder
@@ -47,22 +48,31 @@ def generate(model, start_text, max_tokens=100, temperature=0.8):
 
             # Sample from the distribution
             probs = torch.softmax(logits, dim=-1)
-            next_token = torch.multinomial(probs, num_samples=1)
+            next_token = torch.multinomial(probs, num_samples=1).item()
 
-            # Append to generated sequence
-            generated.append(next_token.item())
-            context = torch.cat([context, next_token], dim=1)
+            # Ensure the token is valid (in the vocabulary range)
+            if next_token < len(itos):
+                generated.append(next_token)
+                context = torch.cat([context, torch.tensor([[next_token]], device=device)], dim=1)
+            else:
+                print(f"Invalid token index: {next_token}. Skipping.")
+                break
 
     # Convert back to text
-    generated_text = ''.join([itos[i] for i in generated])
+    try:
+        generated_text = ''.join([itos[i] for i in generated])
+    except KeyError as e:
+        print(f"KeyError: {e} while generating text.")
+        return start_text  # Return the start_text in case of an error
     return start_text + generated_text
 
 if __name__ == '__main__':
     # Load model
-    model = load_model()
+    model = load_model('out/ckpt_0000080.pt')
 
     # Generate text
     prompt = "The quick brown fox"
     print(f"\nPrompt: {prompt}")
     print("\nGenerated text:")
     print(generate(model, prompt, max_tokens=200, temperature=0.8))
+

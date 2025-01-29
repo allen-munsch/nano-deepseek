@@ -93,7 +93,7 @@ def create_config():
         'n_layer': 4,   # Smaller model
         'n_head': 4,    # Fewer attention heads
         'n_embd': 128,  # Much smaller embeddings
-        'vocab_size': 32000,
+        'vocab_size': 65, # should match prepare.py
         'block_size': block_size,
         'dropout': 0.1,
     }
@@ -396,8 +396,19 @@ class ModelWrapper(torch.nn.Module):
     def _forward_impl(self, x, pos_emb):
         # Apply dropouts even during inference for Monte Carlo dropout
         # Ensure pos_emb is truncated to match x's sequence length
-        T = x.size(1)
-        pos_emb = pos_emb[:, :T, :]
+        batch_size = x.size(0)  # Or pos_emb.size(0) — both should be the same
+        feature_dim = x.size(2)  # Get the feature dimension (last dimension)
+
+        # Check if x and pos_emb need padding/trimming
+        if x.size(1) > pos_emb.size(1):
+            # Pad pos_emb to match x's length
+            padding = x.size(1) - pos_emb.size(1)
+            pos_emb = torch.cat([pos_emb, torch.zeros(batch_size, padding, feature_dim).to(pos_emb.device)], dim=1)
+        elif pos_emb.size(1) > x.size(1):
+            # Pad x to match pos_emb's length
+            padding = pos_emb.size(1) - x.size(1)
+            x = torch.cat([x, torch.zeros(batch_size, padding, feature_dim).to(x.device)], dim=1)
+
         x = self.embed_dropout(x + pos_emb)
         
         # Project input to queries, keys, and values with dropout
