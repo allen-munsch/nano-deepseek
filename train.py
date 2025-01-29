@@ -270,28 +270,56 @@ class ModelWrapper(torch.nn.Module):
         self.head = torch.nn.Linear(config['n_embd'], config['vocab_size'], bias=False)
         self.config = config
     
-    def monte_carlo_attention(self, q, k, v, num_samples=64):
+    def monte_carlo_attention(self, q, k, v, num_samples=64, num_mc_samples=10):
         # q, k, v shape: (batch, seq_len, dim)
         B, L, D = q.shape
         print(f"\nMonte Carlo Attention:")
         print(f"- Batch size: {B}")
         print(f"- Sequence length: {L}")
         print(f"- Hidden dimension: {D}")
-        print(f"- Number of samples: {num_samples}")
+        print(f"- Number of key samples: {num_samples}")
+        print(f"- Number of MC samples: {num_mc_samples}")
         
-        # Compute attention scores for a subset of random keys
-        indices = torch.randint(L, (num_samples,), device=q.device)
-        k_sampled = k[:, indices, :]  # (B, num_samples, D)
-        v_sampled = v[:, indices, :]  # (B, num_samples, D)
-        print(f"- Sampled indices range: {indices.min().item()} to {indices.max().item()}")
+        # Multiple Monte Carlo sampling rounds
+        outputs = []
+        for mc_round in range(num_mc_samples):
+            # Sample different keys/values each round
+            indices = torch.randint(L, (num_samples,), device=q.device)
+            k_sampled = k[:, indices, :]  # (B, num_samples, D)
+            v_sampled = v[:, indices, :]  # (B, num_samples, D)
+            
+            # Add Gaussian noise for exploration
+            k_noise = torch.randn_like(k_sampled) * 0.1
+            v_noise = torch.randn_like(v_sampled) * 0.1
+            k_sampled = k_sampled + k_noise
+            v_sampled = v_sampled + v_noise
+            
+            # Compute attention scores with temperature scaling
+            temp = 1.0 / math.sqrt(D)
+            scores = torch.matmul(q, k_sampled.transpose(-2, -1)) * temp
+            
+            # Gumbel-Softmax for stochastic attention
+            gumbel_noise = -torch.log(-torch.log(torch.rand_like(scores) + 1e-10))
+            scores = scores + gumbel_noise * 0.1
+            attn_weights = F.softmax(scores, dim=-1)
+            
+            # Dropout for regularization
+            attn_weights = F.dropout(attn_weights, p=0.1, training=self.training)
+            
+            # Apply attention
+            out = torch.matmul(attn_weights, v_sampled)  # (B, L, D)
+            outputs.append(out)
         
-        # Compute attention scores
-        scores = torch.matmul(q, k_sampled.transpose(-2, -1)) / math.sqrt(D)  # (B, L, num_samples)
-        attn_weights = F.softmax(scores, dim=-1)
+        # Combine MC samples with uncertainty estimation
+        stacked_outputs = torch.stack(outputs)  # (num_mc_samples, B, L, D)
+        mean_output = torch.mean(stacked_outputs, dim=0)  # (B, L, D)
+        std_output = torch.std(stacked_outputs, dim=0)  # (B, L, D)
         
-        # Apply attention
-        out = torch.matmul(attn_weights, v_sampled)  # (B, L, D)
-        return out
+        # Add uncertainty information to output
+        output = mean_output + std_output * torch.randn_like(mean_output) * 0.1
+        
+        print(f"- Attention uncertainty: {std_output.mean().item():.4f}")
+        return output
 
     def _forward_impl(self, x, pos_emb):
         # Apply dropouts even during inference for Monte Carlo dropout
@@ -568,30 +596,74 @@ while True:
         with autocast(dtype=default_dtype):
             # Multi-token prediction
             logits, aux_loss = model(X, Y)
-            # Monte Carlo sampling for loss calculation
-            num_mc_samples = 10  # Number of MC samples for loss estimation
+            # Enhanced Monte Carlo sampling for loss calculation
+            num_mc_samples = 10
             mc_losses = []
+            mc_predictions = []
             
             for _ in range(num_mc_samples):
-                # Sample from logits using Gumbel-Softmax
-                gumbel_noise = -torch.log(-torch.log(torch.rand_like(logits)))
-                sampled_logits = (logits + gumbel_noise) / 0.1  # temperature=0.1
-                sampled_probs = F.softmax(sampled_logits, dim=-1)
+                # Multiple sampling strategies
                 
-                # Calculate cross entropy with MC samples
-                mc_loss = F.cross_entropy(
+                # 1. Gumbel-Softmax sampling
+                gumbel_noise = -torch.log(-torch.log(torch.rand_like(logits) + 1e-10))
+                gumbel_logits = (logits + gumbel_noise) / 0.1
+                
+                # 2. Temperature sampling
+                temp_scaled = logits / 0.8  # Temperature parameter
+                
+                # 3. Top-k sampling
+                top_k = 40
+                top_k_logits = torch.topk(logits, top_k, dim=-1)
+                top_k_mask = torch.zeros_like(logits).scatter_(-1, top_k_logits.indices, 1.0)
+                
+                # Combine sampling strategies
+                combined_logits = (gumbel_logits + temp_scaled) * top_k_mask
+                sampled_probs = F.softmax(combined_logits, dim=-1)
+                
+                # Add exploration noise
+                exploration_noise = torch.randn_like(sampled_probs) * 0.05
+                sampled_probs = F.softmax(torch.log(sampled_probs + 1e-10) + exploration_noise, dim=-1)
+                
+                # Calculate losses with different metrics
+                ce_loss = F.cross_entropy(
                     sampled_probs.view(-1, sampled_probs.size(-1)),
                     Y[:, :num_tokens_predict].contiguous().view(-1)
                 )
-                mc_losses.append(mc_loss)
+                
+                # KL divergence loss for regularization
+                kl_loss = F.kl_div(
+                    F.log_softmax(logits, dim=-1),
+                    sampled_probs,
+                    reduction='batchmean'
+                )
+                
+                # Combine losses
+                combined_loss = ce_loss + 0.1 * kl_loss
+                mc_losses.append(combined_loss)
+                mc_predictions.append(sampled_probs)
             
-            # Average MC losses
-            main_loss = torch.stack(mc_losses).mean()
-            # Add uncertainty term
-            uncertainty = torch.stack(mc_losses).std()
+            # Compute statistics across MC samples
+            mc_losses = torch.stack(mc_losses)
+            mc_predictions = torch.stack(mc_predictions)
             
-            # Combine losses with uncertainty regularization
-            loss = (main_loss + aux_loss + 0.1 * uncertainty) / grad_accum
+            # Mean and uncertainty estimation
+            main_loss = mc_losses.mean()
+            uncertainty = mc_losses.std()
+            
+            # Prediction diversity penalty
+            pred_mean = mc_predictions.mean(dim=0)
+            pred_std = mc_predictions.std(dim=0)
+            diversity_penalty = -0.1 * pred_std.mean()  # Encourage diverse predictions
+            
+            # Combine all loss components
+            loss = (main_loss + aux_loss + 0.1 * uncertainty + diversity_penalty) / grad_accum
+            
+            if iter_num % log_interval == 0:
+                print(f"\nLoss Components:")
+                print(f"- Main loss: {main_loss.item():.4f}")
+                print(f"- Uncertainty: {uncertainty.item():.4f}")
+                print(f"- Diversity penalty: {diversity_penalty.item():.4f}")
+                print(f"- Combined loss: {loss.item():.4f}")
         
         # immediately async prefetch next batch while model is computing
         X, Y = train_loader.get_batch()
