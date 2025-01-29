@@ -17,13 +17,13 @@ from torch.cuda.amp import autocast
 from torch.distributed.fsdp import FullyShardedDataParallel as FSDP
 from torch.distributed.fsdp.wrap import transformer_auto_wrap_policy
 
-# Training hyperparameters
-batch_size = 32
-block_size = 1024
-max_iters = 1000
-learning_rate = 3e-4
-min_lr = learning_rate/10
-warmup_iters = 10
+# Training hyperparameters from DeepSeek paper
+batch_size = 512  # Increased for better training dynamics
+block_size = 2048  # Larger context window
+max_iters = 600000  # Extended training time
+learning_rate = 1e-4  # Lower base learning rate
+min_lr = learning_rate/20  # Deeper learning rate decay
+warmup_iters = 2000  # Longer warmup period
 grad_clip = 1.0
 grad_accum = 4
 dtype = 'float16'
@@ -442,8 +442,9 @@ class LAMB(torch.optim.Optimizer):
 optimizer = LAMB(
     model.parameters(),
     lr=learning_rate,
-    betas=(0.9, 0.95),  # Same beta values as before
-    weight_decay=0.1,
+    betas=(0.9, 0.999),  # DeepSeek beta values
+    eps=1e-8,
+    weight_decay=0.01,  # Reduced weight decay
     trust_clip=True
 )
 if init_from == 'resume':
@@ -456,17 +457,19 @@ scaler = torch.cuda.amp.GradScaler(enabled=(dtype == 'float16'))
 # helper functions
 
 def get_lr(it):
+    # DeepSeek learning rate schedule
     # 1) linear warmup for warmup_iters steps
     if it < warmup_iters:
         return learning_rate * it / warmup_iters
     # 2) if it > lr_decay_iters, return min learning rate
     if it > max_iters:
         return min_lr
-    # 3) in between, use cosine decay down to min learning rate
+    # 3) cosine decay with longer tail
     decay_ratio = (it - warmup_iters) / (max_iters - warmup_iters)
     assert 0 <= decay_ratio <= 1
     coeff = 0.5 * (1.0 + math.cos(math.pi * decay_ratio))
-    return min_lr + coeff * (learning_rate - min_lr)
+    # Add small constant to prevent learning rate from going too low
+    return max(min_lr, min_lr + coeff * (learning_rate - min_lr)) + 1e-7
 
 # Number of Monte Carlo samples for evaluation
 num_mc_samples = 5
