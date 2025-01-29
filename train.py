@@ -89,11 +89,13 @@ def forward(idx, targets, config):
 # -----------------------------------------------------------------------------
 # Training settings from DeepSeek paper
 out_dir = 'out'
-eval_interval = 2000
+eval_interval = 500  # More frequent evaluations
 log_interval = 1
 eval_iters = 200
 eval_only = False
 always_save_checkpoint = True
+checkpoint_interval = 1000  # Save checkpoints every 1000 iterations
+save_last_n_checkpoints = 5  # Keep last N checkpoints
 init_from = 'scratch'
 
 # Model architecture settings
@@ -301,7 +303,8 @@ while True:
         print(f"Val loss: {losses['val']:.4f}")
         print(f"Learning rate: {lr:.6f}")
         
-        if losses['val'] < best_val_loss or always_save_checkpoint:
+        # Save best model checkpoint
+        if losses['val'] < best_val_loss:
             best_val_loss = losses['val']
             if iter_num > 0:
                 checkpoint = {
@@ -310,8 +313,27 @@ while True:
                     'iter_num': iter_num,
                     'best_val_loss': best_val_loss,
                 }
-                print(f"saving checkpoint to {out_dir}")
-                torch.save(checkpoint, os.path.join(out_dir, 'ckpt.pt'))
+                print(f"Saving best checkpoint to {out_dir}")
+                torch.save(checkpoint, os.path.join(out_dir, 'best_ckpt.pt'))
+
+        # Save periodic checkpoints
+        if iter_num % checkpoint_interval == 0 and iter_num > 0:
+            checkpoint = {
+                'model': {k: v for k, v in model.module.config.items() if isinstance(v, torch.Tensor)},
+                'optimizer': optimizer.state_dict(),
+                'iter_num': iter_num,
+                'best_val_loss': best_val_loss,
+            }
+            ckpt_path = os.path.join(out_dir, f'ckpt_{iter_num:07d}.pt')
+            print(f"Saving periodic checkpoint to {ckpt_path}")
+            torch.save(checkpoint, ckpt_path)
+            
+            # Remove old checkpoints if needed
+            if save_last_n_checkpoints > 0:
+                checkpoints = sorted([f for f in os.listdir(out_dir) if f.startswith('ckpt_')])
+                if len(checkpoints) > save_last_n_checkpoints:
+                    for ckpt in checkpoints[:-save_last_n_checkpoints]:
+                        os.remove(os.path.join(out_dir, ckpt))
 
     if iter_num == 0 and eval_only:
         break
