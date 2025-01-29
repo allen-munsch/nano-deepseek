@@ -534,13 +534,44 @@ while True:
 
     # evaluate the loss on train/val sets and write checkpoints
     if iter_num % eval_interval == 0 and master_process:
+        print(f"\nEvaluation at step {iter_num}")
         losses = estimate_loss()
-        print(f"\nStep {iter_num}:")
         print(f"Train loss: {losses.get('train', {}).get('loss', 0.0):.4f}")
         print(f"Val loss: {losses.get('val', {}).get('loss', 0.0):.4f}")
         print(f"Learning rate: {lr:.6f}")
-        
-        # Early stopping check
+            
+        # Save periodic checkpoint first
+        if iter_num > 0:
+            try:
+                print("\nSaving periodic checkpoint...")
+                checkpoint = {
+                    'model_state_dict': model.state_dict() if not ddp else model.module.state_dict(),
+                    'optimizer_state_dict': optimizer.state_dict(),
+                    'config': model.module.config if ddp else model.config,
+                    'iter_num': iter_num,
+                    'best_val_loss': best_val_loss,
+                }
+                ckpt_path = os.path.join(out_dir, f'ckpt_{iter_num:07d}.pt')
+                print(f"Checkpoint path: {ckpt_path}")
+                    
+                # Make sure output directory exists
+                os.makedirs(out_dir, exist_ok=True)
+                print(f"Created/verified output directory: {out_dir}")
+                    
+                # Save with a temporary file first
+                tmp_path = ckpt_path + '.tmp'
+                print(f"Saving to temporary path: {tmp_path}")
+                breakpoint()  # Debug checkpoint before save
+                torch.save(checkpoint, tmp_path)
+                print("Successfully saved to temporary file")
+                    
+                # Atomic rename to final path
+                os.replace(tmp_path, ckpt_path)
+                print(f"Successfully renamed to final path: {ckpt_path}")
+            except Exception as e:
+                print(f"Error saving checkpoint: {str(e)}")
+            
+        # Early stopping and best model saving
         val_loss = losses.get('val', {}).get('loss', float('inf'))
         early_stopping_history.append(val_loss)
         if len(early_stopping_history) > early_stopping_patience:
