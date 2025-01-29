@@ -396,7 +396,7 @@ class ModelWrapper(torch.nn.Module):
         
         # Use checkpointing for the forward pass
         if use_checkpoint and self.training:
-            logits = checkpoint(self._forward_impl, tok_emb, pos_emb)
+            logits = torch.utils.checkpoint.checkpoint(self._forward_impl, tok_emb, pos_emb)
         else:
             logits = self._forward_impl(tok_emb, pos_emb)
         
