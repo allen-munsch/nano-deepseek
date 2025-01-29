@@ -572,16 +572,16 @@ while True:
                 print(f"Error saving checkpoint: {str(e)}")
             
         # Early stopping and best model saving
-        val_loss = losses.get('val', {}).get('loss', float('inf'))
-        early_stopping_history.append(val_loss)
-        if len(early_stopping_history) > early_stopping_patience:
-            recent_best = min(early_stopping_history[-early_stopping_patience:])
-            if val_loss > recent_best - early_stopping_threshold:
-                print(f"\nEarly stopping triggered! No improvement in validation loss for {early_stopping_patience} evaluations.")
-                print(f"Best val loss: {best_val_loss:.4f}")
-                print(f"Current val loss: {losses['val']:.4f}")
-                break
-            early_stopping_history.pop(0)  # Remove oldest loss
+        # val_loss = losses.get('val', {}).get('loss', float('inf'))
+        # early_stopping_history.append(val_loss)
+        # if len(early_stopping_history) > early_stopping_patience:
+        #     recent_best = min(early_stopping_history[-early_stopping_patience:])
+        #     if val_loss > recent_best - early_stopping_threshold:
+        #         print(f"\nEarly stopping triggered! No improvement in validation loss for {early_stopping_patience} evaluations.")
+        #         print(f"Best val loss: {best_val_loss:.4f}")
+        #         print(f"Current val loss: {losses['val']:.4f}")
+        #         break
+        #     early_stopping_history.pop(0)  # Remove oldest loss
             
         # Save best model checkpoint
         val_loss = losses.get('val', {}).get('loss', float('inf'))
