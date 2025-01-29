@@ -420,7 +420,6 @@ def estimate_loss():
         predictions = []
         
         # Multiple forward passes for uncertainty estimation
-        num_mc_samples = 5
         for k in range(eval_iters):
             X, Y = loader.get_batch()
             mc_losses = []
