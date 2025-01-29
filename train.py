@@ -14,6 +14,50 @@ from torch.cuda.amp import autocast
 from torch.distributed.fsdp import FullyShardedDataParallel as FSDP
 from torch.distributed.fsdp.wrap import transformer_auto_wrap_policy
 
+# Training hyperparameters
+batch_size = 32
+block_size = 1024
+max_iters = 600000
+learning_rate = 3e-4
+min_lr = learning_rate/10
+warmup_iters = 2000
+grad_clip = 1.0
+grad_accum = 4
+dtype = 'float16'
+device_type = 'cuda' if torch.cuda.is_available() else 'cpu'
+ctx = nullcontext() if device_type == 'cpu' else torch.amp.autocast(device_type=device_type, dtype=torch.float16)
+
+def setup_device():
+    """Setup the device for training"""
+    global device
+    if device_type == 'cuda':
+        device = torch.device('cuda')
+    else:
+        device = torch.device('cpu')
+
+def create_config():
+    """Create model configuration"""
+    return {
+        'n_layer': 32,
+        'n_head': 32,
+        'n_embd': 4096,
+        'vocab_size': 32000,
+        'block_size': block_size,
+        'dropout': 0.0,
+    }
+
+def forward(idx, targets, config):
+    """Forward pass of the model"""
+    # This is just a placeholder - actual implementation would depend on your model architecture
+    B, T = idx.shape
+    tok_emb = torch.randn((B, T, config['n_embd']), device=device)
+    logits = torch.randn((B, T, config['vocab_size']), device=device)
+    if targets is None:
+        return logits, None
+    else:
+        loss = F.cross_entropy(logits.view(-1, logits.size(-1)), targets.view(-1), ignore_index=-1)
+        return logits, loss
+
 # -----------------------------------------------------------------------------
 # Training settings from DeepSeek paper
 out_dir = 'out'
