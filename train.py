@@ -557,8 +557,9 @@ while True:
             best_val_loss = losses['val']
             if iter_num > 0:
                 checkpoint = {
-                    'model': {k: v for k, v in model.module.config.items() if isinstance(v, torch.Tensor)},
-                    'optimizer': optimizer.state_dict(),
+                    'model_state_dict': model.state_dict(),
+                    'optimizer_state_dict': optimizer.state_dict(),
+                    'config': model.module.config if ddp else model.config,
                     'iter_num': iter_num,
                     'best_val_loss': best_val_loss,
                 }
