@@ -638,7 +638,7 @@ while True:
                 # Calculate losses with different metrics
                 ce_loss = F.cross_entropy(
                     sampled_probs.view(-1, sampled_probs.size(-1)),
-                    Y[:, :num_tokens_predict].contiguous().view(-1)
+                    Y[:, :sampled_probs.size(1)].contiguous().view(-1)
                 )
                 
                 # KL divergence loss for regularization
