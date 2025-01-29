@@ -235,13 +235,75 @@ model.to(device)
 if ddp:
     model = DDP(model, device_ids=[ddp_local_rank])
 
-# Create optimizer with settings from paper
-optimizer = torch.optim.AdamW(
+# LAMB optimizer implementation
+class LAMB(torch.optim.Optimizer):
+    def __init__(self, params, lr=1e-3, betas=(0.9, 0.999), eps=1e-8, weight_decay=0, trust_clip=True):
+        defaults = dict(lr=lr, betas=betas, eps=eps, weight_decay=weight_decay, trust_clip=trust_clip)
+        super(LAMB, self).__init__(params, defaults)
+
+    @torch.no_grad()
+    def step(self, closure=None):
+        loss = None if closure is None else closure()
+        
+        for group in self.param_groups:
+            for p in group['params']:
+                if p.grad is None:
+                    continue
+                
+                grad = p.grad
+                state = self.state[p]
+                
+                # State initialization
+                if len(state) == 0:
+                    state['step'] = 0
+                    state['exp_avg'] = torch.zeros_like(p)
+                    state['exp_avg_sq'] = torch.zeros_like(p)
+                
+                # Update step
+                state['step'] += 1
+                
+                # Decay the first and second moment running average coefficient
+                exp_avg, exp_avg_sq = state['exp_avg'], state['exp_avg_sq']
+                beta1, beta2 = group['betas']
+                
+                # Weight decay
+                if group['weight_decay'] != 0:
+                    grad = grad.add(p, alpha=group['weight_decay'])
+                
+                # Decay the first and second moment running average coefficient
+                exp_avg.mul_(beta1).add_(grad, alpha=1 - beta1)
+                exp_avg_sq.mul_(beta2).addcmul_(grad, grad, value=1 - beta2)
+                
+                # Compute bias-corrected moments
+                step = state['step']
+                bias_correction1 = 1 - beta1 ** step
+                bias_correction2 = 1 - beta2 ** step
+                
+                # Compute adam update
+                denom = (exp_avg_sq.sqrt() / math.sqrt(bias_correction2)).add_(group['eps'])
+                update = (exp_avg / bias_correction1) / denom
+                
+                # Compute trust ratio
+                if group['trust_clip']:
+                    weight_norm = p.norm()
+                    update_norm = update.norm()
+                    trust_ratio = weight_norm / (update_norm + 1e-7)
+                    trust_ratio = torch.clamp(trust_ratio, 0.0, 10.0)
+                else:
+                    trust_ratio = 1.0
+                
+                # Update weights
+                p.add_(update, alpha=-group['lr'] * trust_ratio)
+        
+        return loss
+
+# Create optimizer with LAMB
+optimizer = LAMB(
     model.parameters(),
     lr=learning_rate,
-    betas=(0.9, 0.95),  # Paper's recommended values
+    betas=(0.9, 0.95),  # Same beta values as before
     weight_decay=0.1,
-    fused=True  # Enable fused optimizer for better performance
+    trust_clip=True
 )
 if init_from == 'resume':
     optimizer.load_state_dict(checkpoint['optimizer'])
