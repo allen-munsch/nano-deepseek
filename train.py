@@ -17,13 +17,13 @@ from torch.cuda.amp import autocast
 from torch.distributed.fsdp import FullyShardedDataParallel as FSDP
 from torch.distributed.fsdp.wrap import transformer_auto_wrap_policy
 
-# Training hyperparameters from DeepSeek paper
-batch_size = 512  # Increased for better training dynamics
-block_size = 2048  # Larger context window
-max_iters = 600000  # Extended training time
-learning_rate = 1e-4  # Lower base learning rate
-min_lr = learning_rate/20  # Deeper learning rate decay
-warmup_iters = 2000  # Longer warmup period
+# Training hyperparameters for faster training
+batch_size = 32    # Smaller batch for CPU
+block_size = 256   # Smaller context window
+max_iters = 1000   # Fewer iterations for testing
+learning_rate = 3e-4
+min_lr = learning_rate/10
+warmup_iters = 100  # Shorter warmup
 grad_clip = 1.0
 grad_accum = 4
 dtype = 'float16'
@@ -68,12 +68,12 @@ def setup_device():
 def create_config():
     """Create model configuration"""
     return {
-        'n_layer': 32,
-        'n_head': 32,
-        'n_embd': 4096,
+        'n_layer': 12,  # GPT-2 small size
+        'n_head': 12,   # GPT-2 small size
+        'n_embd': 768,  # GPT-2 small size
         'vocab_size': 32000,
         'block_size': block_size,
-        'dropout': 0.0,
+        'dropout': 0.1,  # Add some dropout
     }
 
 def forward(idx, targets, config):
@@ -270,7 +270,7 @@ class ModelWrapper(torch.nn.Module):
         self.head = torch.nn.Linear(config['n_embd'], config['vocab_size'], bias=False)
         self.config = config
     
-    def monte_carlo_attention(self, q, k, v, num_samples=64, num_mc_samples=10):
+    def monte_carlo_attention(self, q, k, v, num_samples=32, num_mc_samples=2):  # Reduced samples
         # q, k, v shape: (batch, seq_len, dim)
         B, L, D = q.shape
         print(f"\nMonte Carlo Attention:")
@@ -339,7 +339,12 @@ class ModelWrapper(torch.nn.Module):
 
     def forward(self, idx, targets=None):
         B, T = idx.shape
-        print(f"\nForward Pass:")
+        # Track forward pass count
+        if not hasattr(self, 'forward_count'):
+            self.forward_count = 0
+        self.forward_count += 1
+        
+        print(f"\nForward Pass #{self.forward_count}:")
         print(f"- Input shape: {idx.shape}")
         print(f"- Target shape: {targets.shape if targets is not None else None}")
         
@@ -472,7 +477,7 @@ def get_lr(it):
     return max(min_lr, min_lr + coeff * (learning_rate - min_lr)) + 1e-7
 
 # Number of Monte Carlo samples for evaluation
-num_mc_samples = 5
+num_mc_samples = 2  # Reduced samples for faster evaluation
 
 @torch.no_grad()
 def estimate_loss():
