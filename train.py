@@ -607,6 +607,7 @@ def estimate_loss():
     return out
 
 # -----------------------------------------------------------------------------
+
 def train_iteration(model, optimizer, train_loader, scaler, iter_num, best_val_loss, master_process):
     """Execute a single training iteration"""
     # determine and set the learning rate for this iteration
