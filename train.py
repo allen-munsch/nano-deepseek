@@ -145,7 +145,7 @@ torch.backends.cudnn.allow_tf32 = True
 class DataLoader:
     def __init__(self, split='train'):
         self.split = split
-        filename = os.path.join('data', f'{split}.bin')
+        filename = os.path.join('data', 'openwebtext', f'{split}.bin')
         self.data = np.memmap(filename, dtype=np.uint16, mode='r')
     
     def get_batch(self):
