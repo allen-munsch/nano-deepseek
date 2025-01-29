@@ -176,8 +176,13 @@ class DataLoader:
     def get_batch(self):
         data_size = len(self.data)
         max_index = data_size - block_size - num_tokens_predict
-        print(f"\nDataLoader {self.split}: Using {data_size:,} tokens, max_index={max_index:,}")
+        print(f"\nDataLoader {self.split}:")
+        print(f"- Data size: {data_size:,} tokens")
+        print(f"- Max index: {max_index:,}")
+        print(f"- Block size: {block_size}")
+        print(f"- Batch size: {batch_size}")
         ix = torch.randint(max_index, (batch_size,))
+        print(f"- Sample indices range: {ix.min().item():,} to {ix.max().item():,}")
         x = torch.stack([torch.from_numpy((self.data[i:i+block_size]).astype(np.int64)) for i in ix])
         # Get multiple next tokens for MTP training
         y = torch.stack([torch.from_numpy((self.data[i+1:i+1+block_size+num_tokens_predict]).astype(np.int64)) 
@@ -230,11 +235,17 @@ class ModelWrapper(torch.nn.Module):
     def monte_carlo_attention(self, q, k, v, num_samples=64):
         # q, k, v shape: (batch, seq_len, dim)
         B, L, D = q.shape
+        print(f"\nMonte Carlo Attention:")
+        print(f"- Batch size: {B}")
+        print(f"- Sequence length: {L}")
+        print(f"- Hidden dimension: {D}")
+        print(f"- Number of samples: {num_samples}")
         
         # Compute attention scores for a subset of random keys
         indices = torch.randint(L, (num_samples,), device=q.device)
         k_sampled = k[:, indices, :]  # (B, num_samples, D)
         v_sampled = v[:, indices, :]  # (B, num_samples, D)
+        print(f"- Sampled indices range: {indices.min().item()} to {indices.max().item()}")
         
         # Compute attention scores
         scores = torch.matmul(q, k_sampled.transpose(-2, -1)) / math.sqrt(D)  # (B, L, num_samples)
@@ -262,10 +273,17 @@ class ModelWrapper(torch.nn.Module):
 
     def forward(self, idx, targets=None):
         B, T = idx.shape
+        print(f"\nForward Pass:")
+        print(f"- Input shape: {idx.shape}")
+        print(f"- Target shape: {targets.shape if targets is not None else None}")
+        
         # Get token embeddings
         tok_emb = self.token_embedding(idx)
+        print(f"- Token embedding shape: {tok_emb.shape}")
+        
         # Add positional embeddings
         pos_emb = self.position_embedding[:, :T, :]
+        print(f"- Position embedding shape: {pos_emb.shape}")
         
         # Use checkpointing for the forward pass
         if use_checkpoint and self.training:
@@ -297,8 +315,12 @@ class LAMB(torch.optim.Optimizer):
     @torch.no_grad()
     def step(self, closure=None):
         loss = None if closure is None else closure()
+        print("\nLAMB Optimizer Step:")
         
-        for group in self.param_groups:
+        for group_idx, group in enumerate(self.param_groups):
+            print(f"- Parameter group {group_idx}:")
+            print(f"  - Learning rate: {group['lr']:.6e}")
+            print(f"  - Weight decay: {group['weight_decay']}")
             for p in group['params']:
                 if p.grad is None:
                     continue
@@ -382,9 +404,14 @@ def get_lr(it):
 
 @torch.no_grad()
 def estimate_loss():
+    print("\nEstimating Loss:")
+    print(f"- Evaluation iterations: {eval_iters}")
+    print(f"- Monte Carlo samples: {num_mc_samples}")
+    
     out = {}
     # Don't set model.eval() to keep dropout active for Monte Carlo
     for split in ['train', 'val']:
+        print(f"\nEvaluating {split} split:")
         loader = DataLoader(split)
         losses = torch.zeros(eval_iters)
         predictions = []
