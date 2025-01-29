@@ -541,10 +541,11 @@ while True:
         print(f"Learning rate: {lr:.6f}")
         
         # Early stopping check
+        val_loss = losses.get('val', {}).get('loss', float('inf'))
         early_stopping_history.append(val_loss)
         if len(early_stopping_history) > early_stopping_patience:
             recent_best = min(early_stopping_history[-early_stopping_patience:])
-            if losses['val'] > recent_best - early_stopping_threshold:
+            if val_loss > recent_best - early_stopping_threshold:
                 print(f"\nEarly stopping triggered! No improvement in validation loss for {early_stopping_patience} evaluations.")
                 print(f"Best val loss: {best_val_loss:.4f}")
                 print(f"Current val loss: {losses['val']:.4f}")
