@@ -24,7 +24,7 @@ block_size = 64    # Smaller context window
 max_iters = 100    # Fewer iterations for initial testing
 learning_rate = 3e-4
 min_lr = learning_rate/10
-warmup_iters = 100  # Shorter warmup
+warmup_iters = 20  # Shorter warmup
 grad_clip = 1.0
 grad_accum = 4
 dtype = 'float16'
@@ -167,7 +167,7 @@ def save_checkpoint(checkpoint: Dict[str, Any], path: str, use_atomic: bool = Tr
 # -----------------------------------------------------------------------------
 # Training settings from DeepSeek paper
 out_dir = 'out'
-eval_interval = 500  # More frequent evaluations
+eval_interval = 10   # Evaluate every 10 iterations
 log_interval = 1
 eval_iters = 200
 eval_only = False
