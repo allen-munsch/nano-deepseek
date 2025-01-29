@@ -5,3 +5,4 @@ train.bin
 val.bin
 *.pkl
 data/**/*.txt
+out/
