@@ -45,13 +45,33 @@ def generate(model, start_text, max_tokens=100, temperature=0.8):
             logits, _ = model(context, None)
             logits = logits[:, -1, :] / temperature
 
-            # Sample from the distribution
+            # Apply softmax with temperature
             probs = torch.softmax(logits, dim=-1)
-            next_token = torch.multinomial(probs, num_samples=1)
+
+            # Filter unlikely tokens (optional)
+            top_k = 40  # Keep only top k tokens
+            top_k_probs, top_k_indices = torch.topk(probs, top_k)
+            
+            # Renormalize probabilities for top-k
+            top_k_probs = top_k_probs / top_k_probs.sum()
+
+            # Sample from filtered distribution
+            next_token_idx = torch.multinomial(top_k_probs, num_samples=1)
+            next_token = top_k_indices[0, next_token_idx[0]]
+
+            # Stop if we generate a newline or special token
+            if itos[next_token.item()] in ['\n', '<|endoftext|>']:
+                break
 
             # Append to generated sequence
             generated.append(next_token.item())
-            context = torch.cat([context, next_token], dim=1)
+            context = torch.cat([context, next_token.unsqueeze(0).unsqueeze(0)], dim=1)
+
+            # Optional: Stop if we generate too many special characters in a row
+            if len(generated) > 3:
+                last_chars = ''.join([itos[i] for i in generated[-3:]])
+                if not any(c.isalnum() or c.isspace() for c in last_chars):
+                    break
 
     # Convert back to text
     generated_text = ''.join([itos[i] for i in generated])
