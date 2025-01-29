@@ -553,7 +553,7 @@ while True:
             
         # Save best model checkpoint
         if losses['val']['loss'] < best_val_loss:
-            improvement = best_val_loss - losses['val']
+            improvement = best_val_loss - losses['val']['loss']
             best_val_loss = losses['val']
             if iter_num > 0:
                 checkpoint = {
