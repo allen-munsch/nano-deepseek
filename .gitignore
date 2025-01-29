@@ -1,0 +1,7 @@
+.aider*
+.env
+venv*/
+train.bin
+val.bin
+*.pkl
+data/**/*.txt
