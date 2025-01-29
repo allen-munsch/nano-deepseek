@@ -133,7 +133,16 @@ else:
 # -----------------------------------------------------------------------------
 tokens_per_iter = grad_accum * ddp_world_size * batch_size * block_size
 if master_process:
-    print(f"tokens per iteration will be: {tokens_per_iter:,}")
+    print("\n=== Training Configuration ===")
+    print(f"Device type: {device_type}")
+    print(f"Batch size: {batch_size}")
+    print(f"Block size: {block_size}")
+    print(f"Learning rate: {learning_rate}")
+    print(f"Gradient accumulation steps: {grad_accum}")
+    print(f"Tokens per iteration: {tokens_per_iter:,}")
+    print(f"Max iterations: {max_iters}")
+    print(f"Warmup iterations: {warmup_iters}")
+    print(f"Using dtype: {dtype}")
     os.makedirs(out_dir, exist_ok=True)
 
 torch.manual_seed(1337)
