@@ -78,10 +78,48 @@ def create_config():
 
 def forward(idx, targets, config):
     """Forward pass of the model"""
-    # This is just a placeholder - actual implementation would depend on your model architecture
     B, T = idx.shape
-    tok_emb = torch.randn((B, T, config['n_embd']), device=device)
-    logits = torch.randn((B, T, config['vocab_size']), device=device)
+    
+    # Token embeddings
+    tok_emb = torch.nn.Embedding(config['vocab_size'], config['n_embd'])(idx)
+    
+    # Position embeddings
+    pos = torch.arange(0, T, dtype=torch.long, device=device).unsqueeze(0)
+    pos_emb = torch.nn.Embedding(config['block_size'], config['n_embd'])(pos)
+    
+    # Combine embeddings
+    x = tok_emb + pos_emb
+    
+    # Apply dropout
+    x = F.dropout(x, p=config['dropout'], training=True)
+    
+    # Multi-head attention
+    head_size = config['n_embd'] // config['n_head']
+    
+    # Split into heads
+    x = x.view(B, T, config['n_head'], head_size)
+    
+    # Self attention
+    q = x @ torch.nn.Linear(head_size, head_size, device=device).weight.T
+    k = x @ torch.nn.Linear(head_size, head_size, device=device).weight.T
+    v = x @ torch.nn.Linear(head_size, head_size, device=device).weight.T
+    
+    # Scaled dot product attention
+    att = (q @ k.transpose(-2, -1)) * (1.0 / math.sqrt(k.size(-1)))
+    att = F.softmax(att, dim=-1)
+    att = F.dropout(att, p=config['dropout'], training=True)
+    
+    # Apply attention to values
+    x = att @ v
+    
+    # Merge heads
+    x = x.transpose(1, 2).contiguous().view(B, T, config['n_embd'])
+    
+    # Final linear layer and layer norm
+    x = F.layer_norm(x, [config['n_embd']])
+    logits = torch.nn.Linear(config['n_embd'], config['vocab_size'], device=device)(x)
+    
+    # Loss calculation
     if targets is None:
         return logits, None
     else:
