@@ -98,6 +98,11 @@ checkpoint_interval = 1000  # Save checkpoints every 1000 iterations
 save_last_n_checkpoints = 5  # Keep last N checkpoints
 init_from = 'scratch'
 
+# Early stopping settings
+early_stopping_patience = 5  # Number of evaluations to wait for improvement
+early_stopping_threshold = 0.001  # Minimum improvement required
+early_stopping_history = []  # Track validation losses
+
 # Model architecture settings
 num_experts = 8  # Number of experts in MoE layers
 expert_capacity = 1.25  # Capacity factor for load balancing
@@ -365,8 +370,20 @@ while True:
         print(f"Val loss: {losses['val']:.4f}")
         print(f"Learning rate: {lr:.6f}")
         
+        # Early stopping check
+        early_stopping_history.append(losses['val'])
+        if len(early_stopping_history) > early_stopping_patience:
+            recent_best = min(early_stopping_history[-early_stopping_patience:])
+            if losses['val'] > recent_best - early_stopping_threshold:
+                print(f"\nEarly stopping triggered! No improvement in validation loss for {early_stopping_patience} evaluations.")
+                print(f"Best val loss: {best_val_loss:.4f}")
+                print(f"Current val loss: {losses['val']:.4f}")
+                break
+            early_stopping_history.pop(0)  # Remove oldest loss
+            
         # Save best model checkpoint
         if losses['val'] < best_val_loss:
+            improvement = best_val_loss - losses['val']
             best_val_loss = losses['val']
             if iter_num > 0:
                 checkpoint = {
@@ -375,7 +392,7 @@ while True:
                     'iter_num': iter_num,
                     'best_val_loss': best_val_loss,
                 }
-                print(f"Saving best checkpoint to {out_dir}")
+                print(f"Saving best checkpoint to {out_dir} (improvement: {improvement:.6f})")
                 torch.save(checkpoint, os.path.join(out_dir, 'best_ckpt.pt'))
 
         # Save periodic checkpoints
