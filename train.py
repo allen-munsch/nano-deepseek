@@ -209,6 +209,8 @@ class ModelWrapper(torch.nn.Module):
         if targets is None:
             return logits, None
         else:
+            # Ensure targets are same length as input
+            targets = targets[:, :T]  # Truncate targets to match input length
             loss = F.cross_entropy(logits.view(-1, logits.size(-1)), targets.view(-1), ignore_index=-1)
             return logits, loss
 
