@@ -72,10 +72,8 @@ ctx = nullcontext() if device_type == 'cpu' else torch.amp.autocast(device_type=
 if hasattr(torch.nn.functional, 'scaled_dot_product_attention'):
     torch.backends.cuda.enable_flash_sdp(True)
 
-def setup_device():
+def get_device():
     """Setup the device for training"""
-    global device
-    device = None  # Initialize device variable
     if device_type == 'cuda':
         device = torch.device('cuda')
         # Enable TF32 for better performance on Ampere+ GPUs
@@ -88,7 +86,7 @@ def setup_device():
         # Enable memory efficient attention for CPU training
         if hasattr(torch.nn.functional, 'scaled_dot_product_attention'):
             torch.set_num_threads(os.cpu_count())
-
+    return device
 def create_config():
     """Create model configuration"""
     return {
@@ -214,7 +212,6 @@ backend = 'nccl'
 
 def setup_training():
     """Setup distributed training and device configuration"""
-    global device, master_process, ddp_world_size, ddp, ddp_local_rank, tokens_per_iter
     device = None  # Initialize device variable
     
     # setup distributed training
@@ -241,7 +238,7 @@ def setup_training():
     else:
         master_process = True
         ddp_world_size = 1
-        setup_device()
+        device = get_device()
 
     # Print configuration if master process
     if master_process:
@@ -263,7 +260,7 @@ def setup_training():
     torch.manual_seed(1337)
     torch.backends.cuda.matmul.allow_tf32 = True
     torch.backends.cudnn.allow_tf32 = True
-
+    return device, master_process, ddp_world_size, ddp, ddp_local_rank, tokens_per_iter
 # -----------------------------------------------------------------------------
 # Data loading
 class DataLoader:
@@ -438,6 +435,7 @@ class ModelWrapper(torch.nn.Module):
             loss = F.cross_entropy(logits.view(-1, logits.size(-1)), targets, ignore_index=-1)
             return logits, loss
 
+device = get_device()
 model = ModelWrapper(config)
 model.to(device)
 
@@ -826,10 +824,10 @@ while True:
 
 if __name__ == '__main__':
     # Setup training environment
-    setup_training()
+    device, master_process, ddp_world_size, ddp, ddp_local_rank, tokens_per_iter = setup_training()
     
     # Initialize model and optimizer
-    setup_device()  # Initialize device first
+    device = get_device()  # Initialize device first
     model = ModelWrapper(create_config())
     model.to(device)
     
