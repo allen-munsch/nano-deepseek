@@ -585,279 +585,212 @@ def estimate_loss():
     return out
 
 # -----------------------------------------------------------------------------
-# Training loop
-print(f"Starting training...")
-train_loader = DataLoader('train')
-iter_num = 0
-best_val_loss = float('inf')
-
-t0 = time.time()
-while True:
+def train_iteration(model, optimizer, train_loader, scaler, iter_num, best_val_loss, master_process):
+    """Execute a single training iteration"""
     # determine and set the learning rate for this iteration
-    lr = get_lr(iter_num)
+    lr = get_lr(iter_num) 
     for param_group in optimizer.param_groups:
         param_group['lr'] = lr
 
     # evaluate the loss on train/val sets and write checkpoints
     if iter_num % eval_interval == 0 and master_process:
-        print(f"\nEvaluation at step {iter_num}")
         losses = estimate_loss()
+        print(f"\nEvaluation at step {iter_num}")
         print(f"Train loss: {losses.get('train', {}).get('loss', 0.0):.4f}")
         print(f"Val loss: {losses.get('val', {}).get('loss', 0.0):.4f}")
         print(f"Learning rate: {lr:.6f}")
-            
-        # Save periodic checkpoint first
-        if iter_num > 0:
-            try:
-                print("\nSaving periodic checkpoint...")
-                checkpoint = {
-                    'model_state_dict': model.state_dict() if not ddp else model.module.state_dict(),
-                    'optimizer_state_dict': optimizer.state_dict(),
-                    'config': model.module.config if ddp else model.config,
-                    'iter_num': iter_num,
-                    'best_val_loss': best_val_loss,
-                }
-                ckpt_path = os.path.join(out_dir, f'ckpt_{iter_num:07d}.pt')
-                print(f"Checkpoint path: {ckpt_path}")
-                    
-                # Make sure output directory exists
-                os.makedirs(out_dir, exist_ok=True)
-                print(f"Created/verified output directory: {out_dir}")
-                    
-                # Save with a temporary file first
-                tmp_path = ckpt_path + '.tmp'
-                print(f"Saving to temporary path: {tmp_path}")
-                breakpoint()  # Debug checkpoint before save
-                torch.save(checkpoint, tmp_path)
-                print("Successfully saved to temporary file")
-                    
-                # Atomic rename to final path
-                os.replace(tmp_path, ckpt_path)
-                print(f"Successfully renamed to final path: {ckpt_path}")
-            except Exception as e:
-                print(f"Error saving checkpoint: {str(e)}")
-            
-        # Early stopping and best model saving
-        # val_loss = losses.get('val', {}).get('loss', float('inf'))
-        # early_stopping_history.append(val_loss)
-        # if len(early_stopping_history) > early_stopping_patience:
-        #     recent_best = min(early_stopping_history[-early_stopping_patience:])
-        #     if val_loss > recent_best - early_stopping_threshold:
-        #         print(f"\nEarly stopping triggered! No improvement in validation loss for {early_stopping_patience} evaluations.")
-        #         print(f"Best val loss: {best_val_loss:.4f}")
-        #         print(f"Current val loss: {losses['val']:.4f}")
-        #         break
-        #     early_stopping_history.pop(0)  # Remove oldest loss
-            
-        # Save best model checkpoint
+        
+        # Save checkpoints and handle early stopping
         val_loss = losses.get('val', {}).get('loss', float('inf'))
         if val_loss < best_val_loss:
-            improvement = best_val_loss - val_loss
             best_val_loss = val_loss
             if iter_num > 0:
-                try:
-                    print("\nAttempting to save best checkpoint...")
-                    checkpoint = {
-                        'model_state_dict': model.state_dict() if not ddp else model.module.state_dict(),
-                        'optimizer_state_dict': optimizer.state_dict(),
-                        'config': model.module.config if ddp else model.config,
-                        'iter_num': iter_num,
-                        'best_val_loss': best_val_loss,
-                    }
-                    ckpt_path = os.path.join(out_dir, 'best_ckpt.pt')
-                    print(f"Improvement: {improvement:.6f}")
-                    breakpoint()  # Debug checkpoint before save
-                    save_checkpoint(checkpoint, ckpt_path)
-                except Exception as e:
-                    print(f"Error saving checkpoint: {str(e)}")
-
-        # Save periodic checkpoints
-        if iter_num % checkpoint_interval == 0 and iter_num > 0:
-            try:
-                print("\nAttempting to save periodic checkpoint...")
-                checkpoint = {
+                save_checkpoint({
                     'model_state_dict': model.state_dict() if not ddp else model.module.state_dict(),
                     'optimizer_state_dict': optimizer.state_dict(),
                     'config': model.module.config if ddp else model.config,
                     'iter_num': iter_num,
                     'best_val_loss': best_val_loss,
-                }
-                ckpt_path = os.path.join(out_dir, f'ckpt_{iter_num:07d}.pt')
-                breakpoint()  # Debug checkpoint before save
-                save_checkpoint(checkpoint, ckpt_path)
-            except Exception as e:
-                print(f"Error saving checkpoint: {str(e)}")
-            
-            # Remove old checkpoints if needed
-            if save_last_n_checkpoints > 0:
-                checkpoints = sorted([f for f in os.listdir(out_dir) if f.startswith('ckpt_')])
-                if len(checkpoints) > save_last_n_checkpoints:
-                    for ckpt in checkpoints[:-save_last_n_checkpoints]:
-                        os.remove(os.path.join(out_dir, ckpt))
+                }, os.path.join(out_dir, 'best_ckpt.pt'))
 
-    if iter_num == 0 and eval_only:
-        break
+        # Periodic checkpoints
+        if iter_num % checkpoint_interval == 0 and iter_num > 0:
+            save_checkpoint({
+                'model_state_dict': model.state_dict() if not ddp else model.module.state_dict(),
+                'optimizer_state_dict': optimizer.state_dict(),
+                'config': model.module.config if ddp else model.config,
+                'iter_num': iter_num,
+                'best_val_loss': best_val_loss,
+            }, os.path.join(out_dir, f'ckpt_{iter_num:07d}.pt'))
 
-    # forward backward update with MTP and MoE handling
+    # Training step
     model.train()
     if iter_num % log_interval == 0:
         print(f"\n=== Training Iteration {iter_num} ===")
         print(f"Learning rate: {lr:.6e}")
     
     X, Y = train_loader.get_batch()
+    t0 = time.time()
     
-    # Zero grad and accumulate gradients
+    # Execute training step
+    loss = execute_training_step(model, optimizer, X, Y, scaler, iter_num)
+    
+    # Timing and logging
+    t1 = time.time()
+    dt = t1 - t0
+    
+    if iter_num % log_interval == 0 and master_process:
+        log_training_stats(loss, dt, iter_num)
+        
+    return best_val_loss
+
+def execute_training_step(model, optimizer, X, Y, scaler, iter_num):
+    """Execute core training logic for a single step"""
     optimizer.zero_grad(set_to_none=True)
+    
     for micro_step in range(grad_accum):
         if ddp:
             model.require_backward_grad_sync = (micro_step == grad_accum - 1)
         
         with autocast(dtype=default_dtype):
-            # Multi-token prediction
             logits, aux_loss = model(X, Y)
-            # Enhanced Monte Carlo sampling for loss calculation
-            num_mc_samples = 10
-            mc_losses = []
-            mc_predictions = []
+            loss = calculate_loss(logits, Y, aux_loss)
             
-            for _ in range(num_mc_samples):
-                # Multiple sampling strategies
-                
-                # 1. Gumbel-Softmax sampling
-                gumbel_noise = -torch.log(-torch.log(torch.rand_like(logits) + 1e-10))
-                gumbel_logits = (logits + gumbel_noise) / 0.1
-                
-                # 2. Temperature sampling
-                temp_scaled = logits / 0.8  # Temperature parameter
-                
-                # 3. Top-k sampling
-                top_k = 40
-                top_k_logits = torch.topk(logits, top_k, dim=-1)
-                top_k_mask = torch.zeros_like(logits).scatter_(-1, top_k_logits.indices, 1.0)
-                
-                # Combine sampling strategies
-                combined_logits = (gumbel_logits + temp_scaled) * top_k_mask
-                sampled_probs = F.softmax(combined_logits, dim=-1)
-                
-                # Add exploration noise
-                exploration_noise = torch.randn_like(sampled_probs) * 0.05
-                sampled_probs = F.softmax(torch.log(sampled_probs + 1e-10) + exploration_noise, dim=-1)
-                
-                # Calculate losses with different metrics
-                ce_loss = F.cross_entropy(
-                    sampled_probs.view(-1, sampled_probs.size(-1)),
-                    Y[:, :sampled_probs.size(1)].contiguous().view(-1)
-                )
-                
-                # KL divergence loss for regularization
-                kl_loss = F.kl_div(
-                    F.log_softmax(logits, dim=-1),
-                    sampled_probs,
-                    reduction='batchmean'
-                )
-                
-                # Combine losses
-                combined_loss = ce_loss + 0.1 * kl_loss
-                mc_losses.append(combined_loss)
-                mc_predictions.append(sampled_probs)
-            
-            # Compute statistics across MC samples
-            mc_losses = torch.stack(mc_losses)
-            mc_predictions = torch.stack(mc_predictions)
-            
-            # Mean and uncertainty estimation
-            main_loss = mc_losses.mean()
-            uncertainty = mc_losses.std()
-            
-            # Prediction diversity penalty
-            pred_mean = mc_predictions.mean(dim=0)
-            pred_std = mc_predictions.std(dim=0)
-            diversity_penalty = -0.1 * pred_std.mean()  # Encourage diverse predictions
-            
-            # Combine all loss components
-            loss = (main_loss + aux_loss + 0.1 * uncertainty + diversity_penalty) / grad_accum
-            
-            if iter_num % log_interval == 0:
-                print(f"\nLoss Components:")
-                print(f"- Main loss: {main_loss.item():.4f}")
-                print(f"- Uncertainty: {uncertainty.item():.4f}")
-                print(f"- Diversity penalty: {diversity_penalty.item():.4f}")
-                print(f"- Combined loss: {loss.item():.4f}")
-        
-        # immediately async prefetch next batch while model is computing
-        X, Y = train_loader.get_batch()
-        
-        # backward pass
         if iter_num % log_interval == 0:
             print(f"Micro-step {micro_step + 1}/{grad_accum}, Loss: {loss.item():.4f}")
+        
         scaler.scale(loss).backward()
-    
-    # clip the gradient
+        
     if grad_clip != 0.0:
         scaler.unscale_(optimizer)
         torch.nn.utils.clip_grad_norm_(model.parameters(), grad_clip)
     
-    # step the optimizer and scaler if training in fp16
     scaler.step(optimizer)
     scaler.update()
+    
+    return loss
 
-    # timing and logging
-    t1 = time.time()
-    dt = t1 - t0
-    t0 = t1
-    if iter_num % log_interval == 0 and master_process:
-        lossf = loss.item() * grad_accum
-        tokens_processed = iter_num * tokens_per_iter
-        print(f"\n=== Training Stats ===")
-        print(f"Iteration: {iter_num}/{max_iters}")
-        print(f"Loss: {lossf:.4f}")
-        print(f"Time per iter: {dt*1000:.2f}ms")
-        print(f"Tokens processed: {tokens_processed:,}")
-        print(f"Training speed: {tokens_per_iter/dt:,.0f} tokens/sec")
-        print(f"Memory used: {torch.cuda.max_memory_allocated()/1e9:.2f}GB") if device_type == 'cuda' else None
+def train_model(model, optimizer, master_process):
+    """Main training loop"""
+    print(f"Starting training...")
+    train_loader = DataLoader('train')
+    iter_num = 0
+    best_val_loss = float('inf')
 
-    iter_num += 1
-
-    # termination conditions
-    if iter_num > max_iters:
-        break
+    # Main training loop
+    while True:
+        best_val_loss = train_iteration(model, optimizer, train_loader, scaler, iter_num, best_val_loss, master_process)
+        
+        if iter_num == 0 and eval_only:
+            break
+            
+        iter_num += 1
+        
+        if iter_num > max_iters:
+            break
+            
+    return best_val_loss
 
 if __name__ == '__main__':
-    # Setup training environment
-    device, master_process, ddp_world_size, ddp, ddp_local_rank, tokens_per_iter = setup_training()
-    
-    # Initialize model and optimizer
-    device = get_device()  # Initialize device first
-    model = ModelWrapper(create_config())
-    model.to(device)
-    
-    if ddp:
-        model = DDP(model, device_ids=[ddp_local_rank])
-    
-    optimizer = LAMB(
-        model.parameters(),
-        lr=learning_rate,
-        betas=(0.9, 0.999),
-        eps=1e-8,
-        weight_decay=0.01,
-        trust_clip=True
-    )
-    
-    # Training loop
     try:
-        train_loader = DataLoader('train')
-        iter_num = 0
-        best_val_loss = float('inf')
-        early_stopping_history = []
+        # Setup training environment
+        device, master_process, ddp_world_size, ddp, ddp_local_rank, tokens_per_iter = setup_training()
         
-        while True:
-            # Training logic here...
-            if iter_num > max_iters:
-                break
-            
-            # Your existing training loop code...
-            iter_num += 1
-            
+        # Initialize model and optimizer
+        model = ModelWrapper(create_config())
+        model.to(device)
+        
+        if ddp:
+            model = DDP(model, device_ids=[ddp_local_rank])
+        
+        optimizer = LAMB(
+            model.parameters(),
+            lr=learning_rate,
+            betas=(0.9, 0.999),
+            eps=1e-8,
+            weight_decay=0.01,
+            trust_clip=True
+        )
+        
+        # Run training
+        final_val_loss = train_model(model, optimizer, master_process)
+        print(f"Training completed with final validation loss: {final_val_loss:.4f}")
+        
     finally:
         if ddp:
             destroy_process_group()
+def calculate_loss(logits, targets, aux_loss):
+    """Calculate loss with Monte Carlo sampling"""
+    num_mc_samples = 10
+    mc_losses = []
+    mc_predictions = []
+    
+    for _ in range(num_mc_samples):
+        # Multiple sampling strategies
+        
+        # 1. Gumbel-Softmax sampling
+        gumbel_noise = -torch.log(-torch.log(torch.rand_like(logits) + 1e-10))
+        gumbel_logits = (logits + gumbel_noise) / 0.1
+        
+        # 2. Temperature sampling
+        temp_scaled = logits / 0.8  # Temperature parameter
+        
+        # 3. Top-k sampling
+        top_k = 40
+        top_k_logits = torch.topk(logits, top_k, dim=-1)
+        top_k_mask = torch.zeros_like(logits).scatter_(-1, top_k_logits.indices, 1.0)
+        
+        # Combine sampling strategies
+        combined_logits = (gumbel_logits + temp_scaled) * top_k_mask
+        sampled_probs = F.softmax(combined_logits, dim=-1)
+        
+        # Add exploration noise
+        exploration_noise = torch.randn_like(sampled_probs) * 0.05
+        sampled_probs = F.softmax(torch.log(sampled_probs + 1e-10) + exploration_noise, dim=-1)
+        
+        # Calculate losses with different metrics
+        ce_loss = F.cross_entropy(
+            sampled_probs.view(-1, sampled_probs.size(-1)),
+            targets[:, :sampled_probs.size(1)].contiguous().view(-1)
+        )
+        
+        # KL divergence loss for regularization
+        kl_loss = F.kl_div(
+            F.log_softmax(logits, dim=-1),
+            sampled_probs,
+            reduction='batchmean'
+        )
+        
+        # Combine losses
+        combined_loss = ce_loss + 0.1 * kl_loss
+        mc_losses.append(combined_loss)
+        mc_predictions.append(sampled_probs)
+    
+    # Compute statistics across MC samples
+    mc_losses = torch.stack(mc_losses)
+    mc_predictions = torch.stack(mc_predictions)
+    
+    # Mean and uncertainty estimation
+    main_loss = mc_losses.mean()
+    uncertainty = mc_losses.std()
+    
+    # Prediction diversity penalty
+    pred_mean = mc_predictions.mean(dim=0)
+    pred_std = mc_predictions.std(dim=0)
+    diversity_penalty = -0.1 * pred_std.mean()  # Encourage diverse predictions
+    
+    # Combine all loss components
+    return (main_loss + aux_loss + 0.1 * uncertainty + diversity_penalty) / grad_accum
+
+def log_training_stats(loss, dt, iter_num):
+    """Log training statistics"""
+    lossf = loss.item() * grad_accum
+    tokens_processed = iter_num * tokens_per_iter
+    print(f"\n=== Training Stats ===")
+    print(f"Iteration: {iter_num}/{max_iters}")
+    print(f"Loss: {lossf:.4f}")
+    print(f"Time per iter: {dt*1000:.2f}ms")
+    print(f"Tokens processed: {tokens_processed:,}")
+    print(f"Training speed: {tokens_per_iter/dt:,.0f} tokens/sec")
+    if device_type == 'cuda':
+        print(f"Memory used: {torch.cuda.max_memory_allocated()/1e9:.2f}GB")
