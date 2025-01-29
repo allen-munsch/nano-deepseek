@@ -75,6 +75,7 @@ if hasattr(torch.nn.functional, 'scaled_dot_product_attention'):
 def setup_device():
     """Setup the device for training"""
     global device
+    device = None  # Initialize device variable
     if device_type == 'cuda':
         device = torch.device('cuda')
         # Enable TF32 for better performance on Ampere+ GPUs
@@ -214,6 +215,7 @@ backend = 'nccl'
 def setup_training():
     """Setup distributed training and device configuration"""
     global device, master_process, ddp_world_size, ddp, ddp_local_rank, tokens_per_iter
+    device = None  # Initialize device variable
     
     # setup distributed training
     ddp = int(os.environ.get('RANK', -1)) != -1
@@ -827,6 +829,7 @@ if __name__ == '__main__':
     setup_training()
     
     # Initialize model and optimizer
+    setup_device()  # Initialize device first
     model = ModelWrapper(create_config())
     model.to(device)
     
