@@ -156,7 +156,10 @@ class DataLoader:
         raise FileNotFoundError(f"Could not find {split}.bin in {data_dir} directory tree")
     
     def get_batch(self):
-        ix = torch.randint(len(self.data) - block_size - num_tokens_predict, (batch_size,))
+        data_size = len(self.data)
+        max_index = data_size - block_size - num_tokens_predict
+        print(f"\nDataLoader {self.split}: Using {data_size:,} tokens, max_index={max_index:,}")
+        ix = torch.randint(max_index, (batch_size,))
         x = torch.stack([torch.from_numpy((self.data[i:i+block_size]).astype(np.int64)) for i in ix])
         # Get multiple next tokens for MTP training
         y = torch.stack([torch.from_numpy((self.data[i+1:i+1+block_size+num_tokens_predict]).astype(np.int64)) 
@@ -306,6 +309,10 @@ while True:
 
     # forward backward update with MTP and MoE handling
     model.train()
+    if iter_num % log_interval == 0:
+        print(f"\n=== Training Iteration {iter_num} ===")
+        print(f"Learning rate: {lr:.6e}")
+    
     X, Y = train_loader.get_batch()
     
     # Zero grad and accumulate gradients
@@ -326,6 +333,8 @@ while True:
         X, Y = train_loader.get_batch()
         
         # backward pass
+        if iter_num % log_interval == 0:
+            print(f"Micro-step {micro_step + 1}/{grad_accum}, Loss: {loss.item():.4f}")
         scaler.scale(loss).backward()
     
     # clip the gradient
@@ -344,9 +353,13 @@ while True:
     if iter_num % log_interval == 0 and master_process:
         lossf = loss.item() * grad_accum
         tokens_processed = iter_num * tokens_per_iter
-        print(f"Iter {iter_num}: loss {lossf:.4f}, time {dt*1000:.2f}ms")
+        print(f"\n=== Training Stats ===")
+        print(f"Iteration: {iter_num}/{max_iters}")
+        print(f"Loss: {lossf:.4f}")
+        print(f"Time per iter: {dt*1000:.2f}ms")
         print(f"Tokens processed: {tokens_processed:,}")
         print(f"Training speed: {tokens_per_iter/dt:,.0f} tokens/sec")
+        print(f"Memory used: {torch.cuda.max_memory_allocated()/1e9:.2f}GB") if device_type == 'cuda' else None
 
     iter_num += 1
 
