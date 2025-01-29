@@ -211,7 +211,12 @@ class ModelWrapper(torch.nn.Module):
         # Create actual trainable parameters
         self.token_embedding = torch.nn.Embedding(config['vocab_size'], config['n_embd'])
         self.position_embedding = torch.nn.Parameter(torch.zeros(1, config['block_size'], config['n_embd']))
-        self.dropout = torch.nn.Dropout(config['dropout'])
+        
+        # Multiple dropout layers for Monte Carlo dropout
+        self.embed_dropout = torch.nn.Dropout(config['dropout'])
+        self.attn_dropout = torch.nn.Dropout(config['dropout'])
+        self.proj_dropout = torch.nn.Dropout(config['dropout'])
+        self.final_dropout = torch.nn.Dropout(config['dropout'])
         
         # Attention projections
         self.q_proj = torch.nn.Linear(config['n_embd'], config['n_embd'])
@@ -240,17 +245,19 @@ class ModelWrapper(torch.nn.Module):
         return out
 
     def _forward_impl(self, x, pos_emb):
-        x = self.dropout(x + pos_emb)
+        # Apply dropouts even during inference for Monte Carlo dropout
+        x = self.embed_dropout(x + pos_emb)
         
-        # Project input to queries, keys, and values
-        q = self.q_proj(x)
-        k = self.k_proj(x)
-        v = self.v_proj(x)
+        # Project input to queries, keys, and values with dropout
+        q = self.proj_dropout(self.q_proj(x))
+        k = self.proj_dropout(self.k_proj(x))
+        v = self.proj_dropout(self.v_proj(x))
         
-        # Apply Monte Carlo attention
-        x = self.monte_carlo_attention(q, k, v)
+        # Apply Monte Carlo attention with dropout
+        x = self.attn_dropout(self.monte_carlo_attention(q, k, v))
         
         x = self.ln_f(x)
+        x = self.final_dropout(x)
         return self.head(x)
 
     def forward(self, idx, targets=None):
@@ -376,17 +383,36 @@ def get_lr(it):
 @torch.no_grad()
 def estimate_loss():
     out = {}
-    model.eval()
+    # Don't set model.eval() to keep dropout active for Monte Carlo
     for split in ['train', 'val']:
         loader = DataLoader(split)
         losses = torch.zeros(eval_iters)
+        predictions = []
+        
+        # Multiple forward passes for uncertainty estimation
+        num_mc_samples = 5
         for k in range(eval_iters):
             X, Y = loader.get_batch()
-            with ctx:
-                logits, loss = model(X, Y)
-            losses[k] = loss.item()
-        out[split] = losses.mean()
-    model.train()
+            mc_losses = []
+            mc_logits = []
+            
+            # Monte Carlo sampling with dropout
+            for _ in range(num_mc_samples):
+                with ctx:
+                    logits, loss = model(X, Y)
+                    mc_losses.append(loss.item())
+                    mc_logits.append(logits.softmax(dim=-1))
+            
+            # Average losses and compute uncertainty
+            losses[k] = sum(mc_losses) / num_mc_samples
+            mean_probs = torch.stack(mc_logits).mean(dim=0)
+            uncertainty = -(mean_probs * torch.log(mean_probs + 1e-8)).sum(dim=-1).mean().item()
+            predictions.append({'mean_probs': mean_probs, 'uncertainty': uncertainty})
+            
+        out[split] = {
+            'loss': losses.mean().item(),
+            'uncertainty': sum(p['uncertainty'] for p in predictions) / len(predictions)
+        }
     return out
 
 # -----------------------------------------------------------------------------
