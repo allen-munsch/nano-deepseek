@@ -424,8 +424,9 @@ class ModelWrapper(torch.nn.Module):
         tok_emb = self.token_embedding(idx)
         print(f"- Token embedding shape: {tok_emb.shape}")
         
-        # Add positional embeddings, ensuring same length as input
-        pos_emb = self.position_embedding[:, :T, :].expand(B, T, -1)
+        # Add positional embeddings, truncating to input sequence length
+        pos_emb = self.position_embedding[:, :min(T, self.config['block_size']), :]
+        pos_emb = pos_emb.expand(B, min(T, self.config['block_size']), -1)
         print(f"- Position embedding shape: {pos_emb.shape}")
         
         # Use checkpointing for the forward pass
