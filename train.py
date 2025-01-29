@@ -46,6 +46,11 @@ grad_clip = config['grad_clip']
 grad_accum = config['grad_accum']
 dtype = config['dtype']
 use_checkpoint = config['use_checkpoint']
+
+# Global variables for distributed training
+ddp = False
+ddp_local_rank = 0
+tokens_per_iter = grad_accum * batch_size * block_size
 # Determine device and precision based on hardware
 if torch.cuda.is_available():
     device_type = 'cuda'
@@ -208,7 +213,7 @@ backend = 'nccl'
 
 def setup_training():
     """Setup distributed training and device configuration"""
-    global device, master_process, ddp_world_size
+    global device, master_process, ddp_world_size, ddp, ddp_local_rank, tokens_per_iter
     
     # setup distributed training
     ddp = int(os.environ.get('RANK', -1)) != -1
@@ -238,6 +243,7 @@ def setup_training():
 
     # Print configuration if master process
     if master_process:
+        global tokens_per_iter
         tokens_per_iter = grad_accum * ddp_world_size * batch_size * block_size
         print("\n=== Training Configuration ===")
         print(f"Device type: {device_type}")
