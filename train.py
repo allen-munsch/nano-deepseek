@@ -559,20 +559,22 @@ while True:
             best_val_loss = val_loss
             if iter_num > 0:
                 checkpoint = {
-                    'model_state_dict': model.state_dict(),
+                    'model_state_dict': model.state_dict() if not ddp else model.module.state_dict(),
                     'optimizer_state_dict': optimizer.state_dict(),
                     'config': model.module.config if ddp else model.config,
                     'iter_num': iter_num,
                     'best_val_loss': best_val_loss,
                 }
-                print(f"Saving best checkpoint to {out_dir} (improvement: {improvement:.6f})")
-                torch.save(checkpoint, os.path.join(out_dir, 'best_ckpt.pt'))
+                ckpt_path = os.path.join(out_dir, 'best_ckpt.pt')
+                print(f"Saving best checkpoint to {ckpt_path} (improvement: {improvement:.6f})")
+                torch.save(checkpoint, ckpt_path)
 
         # Save periodic checkpoints
         if iter_num % checkpoint_interval == 0 and iter_num > 0:
             checkpoint = {
-                'model': {k: v for k, v in model.module.config.items() if isinstance(v, torch.Tensor)},
-                'optimizer': optimizer.state_dict(),
+                'model_state_dict': model.state_dict() if not ddp else model.module.state_dict(),
+                'optimizer_state_dict': optimizer.state_dict(),
+                'config': model.module.config if ddp else model.config,
                 'iter_num': iter_num,
                 'best_val_loss': best_val_loss,
             }
