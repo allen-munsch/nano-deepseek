@@ -2,6 +2,8 @@ import os
 import pickle
 import torch
 import numpy as np
+import tiktoken
+from torch.nn import functional as F
 from train import ModelWrapper, create_config, get_device
 
 def load_model(checkpoint_path='out/best_ckpt.pt'):
