@@ -6,3 +6,4 @@ val.bin
 *.pkl
 data/**/*.txt
 out/
+__pycache__/
