@@ -185,6 +185,20 @@ def save_checkpoint(checkpoint: Dict[str, Any], path: str, use_atomic: bool = Tr
             os.remove(tmp_path)
         raise
 
+def log_training_stats(loss, dt, iter_num):
+    """Log training statistics"""
+    lossf = loss.item() * grad_accum
+    tokens_processed = iter_num * tokens_per_iter
+    print("\n=== Training Stats ===")
+    print(f"Iteration: {iter_num}/{max_iters}")
+    print(f"Loss: {lossf:.4f}")
+    print(f"Time per iter: {dt*1000:.2f}ms")
+    print(f"Tokens processed: {tokens_processed:,}")
+    print(f"Training speed: {tokens_per_iter/dt:,.0f} tokens/sec")
+    if device_type == 'cuda':
+        print(f"Memory used: {torch.cuda.max_memory_allocated()/1e9:.2f}GB")
+
+
 # -----------------------------------------------------------------------------
 # Training settings from DeepSeek paper
 out_dir = 'out'
@@ -869,15 +883,3 @@ def calculate_loss(logits, targets, aux_loss):
     # Combine all loss components
     return (main_loss + aux_loss + 0.1 * uncertainty + diversity_penalty) / grad_accum
 
-def log_training_stats(loss, dt, iter_num):
-    """Log training statistics"""
-    lossf = loss.item() * grad_accum
-    tokens_processed = iter_num * tokens_per_iter
-    print(f"\n=== Training Stats ===")
-    print(f"Iteration: {iter_num}/{max_iters}")
-    print(f"Loss: {lossf:.4f}")
-    print(f"Time per iter: {dt*1000:.2f}ms")
-    print(f"Tokens processed: {tokens_processed:,}")
-    print(f"Training speed: {tokens_per_iter/dt:,.0f} tokens/sec")
-    if device_type == 'cuda':
-        print(f"Memory used: {torch.cuda.max_memory_allocated()/1e9:.2f}GB")
