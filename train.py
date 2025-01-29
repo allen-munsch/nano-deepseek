@@ -558,6 +558,30 @@ while True:
             improvement = best_val_loss - val_loss
             best_val_loss = val_loss
             if iter_num > 0:
+                try:
+                    checkpoint = {
+                        'model_state_dict': model.state_dict() if not ddp else model.module.state_dict(),
+                        'optimizer_state_dict': optimizer.state_dict(),
+                        'config': model.module.config if ddp else model.config,
+                        'iter_num': iter_num,
+                        'best_val_loss': best_val_loss,
+                    }
+                    ckpt_path = os.path.join(out_dir, 'best_ckpt.pt')
+                    print(f"Saving best checkpoint to {ckpt_path} (improvement: {improvement:.6f})")
+                    # Make sure output directory exists
+                    os.makedirs(out_dir, exist_ok=True)
+                    # Save with a temporary file first
+                    tmp_path = ckpt_path + '.tmp'
+                    torch.save(checkpoint, tmp_path)
+                    # Atomic rename to final path
+                    os.replace(tmp_path, ckpt_path)
+                    print(f"Successfully saved checkpoint to {ckpt_path}")
+                except Exception as e:
+                    print(f"Error saving checkpoint: {str(e)}")
+
+        # Save periodic checkpoints
+        if iter_num % checkpoint_interval == 0 and iter_num > 0:
+            try:
                 checkpoint = {
                     'model_state_dict': model.state_dict() if not ddp else model.module.state_dict(),
                     'optimizer_state_dict': optimizer.state_dict(),
@@ -565,22 +589,18 @@ while True:
                     'iter_num': iter_num,
                     'best_val_loss': best_val_loss,
                 }
-                ckpt_path = os.path.join(out_dir, 'best_ckpt.pt')
-                print(f"Saving best checkpoint to {ckpt_path} (improvement: {improvement:.6f})")
-                torch.save(checkpoint, ckpt_path)
-
-        # Save periodic checkpoints
-        if iter_num % checkpoint_interval == 0 and iter_num > 0:
-            checkpoint = {
-                'model_state_dict': model.state_dict() if not ddp else model.module.state_dict(),
-                'optimizer_state_dict': optimizer.state_dict(),
-                'config': model.module.config if ddp else model.config,
-                'iter_num': iter_num,
-                'best_val_loss': best_val_loss,
-            }
-            ckpt_path = os.path.join(out_dir, f'ckpt_{iter_num:07d}.pt')
-            print(f"Saving periodic checkpoint to {ckpt_path}")
-            torch.save(checkpoint, ckpt_path)
+                ckpt_path = os.path.join(out_dir, f'ckpt_{iter_num:07d}.pt')
+                print(f"Saving periodic checkpoint to {ckpt_path}")
+                # Make sure output directory exists
+                os.makedirs(out_dir, exist_ok=True)
+                # Save with a temporary file first
+                tmp_path = ckpt_path + '.tmp'
+                torch.save(checkpoint, tmp_path)
+                # Atomic rename to final path
+                os.replace(tmp_path, ckpt_path)
+                print(f"Successfully saved checkpoint to {ckpt_path}")
+            except Exception as e:
+                print(f"Error saving checkpoint: {str(e)}")
             
             # Remove old checkpoints if needed
             if save_last_n_checkpoints > 0:
