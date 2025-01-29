@@ -501,10 +501,30 @@ while True:
         with autocast(dtype=default_dtype):
             # Multi-token prediction
             logits, aux_loss = model(X, Y)
-            # Main loss for multiple token predictions
-            main_loss = F.cross_entropy(logits.view(-1, logits.size(-1)), Y[:, :num_tokens_predict].contiguous().view(-1))
-            # Combine losses
-            loss = (main_loss + aux_loss) / grad_accum
+            # Monte Carlo sampling for loss calculation
+            num_mc_samples = 10  # Number of MC samples for loss estimation
+            mc_losses = []
+            
+            for _ in range(num_mc_samples):
+                # Sample from logits using Gumbel-Softmax
+                gumbel_noise = -torch.log(-torch.log(torch.rand_like(logits)))
+                sampled_logits = (logits + gumbel_noise) / 0.1  # temperature=0.1
+                sampled_probs = F.softmax(sampled_logits, dim=-1)
+                
+                # Calculate cross entropy with MC samples
+                mc_loss = F.cross_entropy(
+                    sampled_probs.view(-1, sampled_probs.size(-1)),
+                    Y[:, :num_tokens_predict].contiguous().view(-1)
+                )
+                mc_losses.append(mc_loss)
+            
+            # Average MC losses
+            main_loss = torch.stack(mc_losses).mean()
+            # Add uncertainty term
+            uncertainty = torch.stack(mc_losses).std()
+            
+            # Combine losses with uncertainty regularization
+            loss = (main_loss + aux_loss + 0.1 * uncertainty) / grad_accum
         
         # immediately async prefetch next batch while model is computing
         X, Y = train_loader.get_batch()
