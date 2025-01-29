@@ -395,6 +395,9 @@ class ModelWrapper(torch.nn.Module):
 
     def _forward_impl(self, x, pos_emb):
         # Apply dropouts even during inference for Monte Carlo dropout
+        # Ensure pos_emb is truncated to match x's sequence length
+        T = x.size(1)
+        pos_emb = pos_emb[:, :T, :]
         x = self.embed_dropout(x + pos_emb)
         
         # Project input to queries, keys, and values with dropout
