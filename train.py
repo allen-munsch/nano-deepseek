@@ -470,7 +470,7 @@ def get_lr(it):
     if it > max_iters:
         return min_lr
     # 3) cosine decay with longer tail
-    decay_ratio = (it - warmup_iters) / (max_iters - warmup_iters)
+    decay_ratio = (it - warmup_iters) / max(1, max_iters - warmup_iters)
     assert 0 <= decay_ratio <= 1
     coeff = 0.5 * (1.0 + math.cos(math.pi * decay_ratio))
     # Add small constant to prevent learning rate from going too low
