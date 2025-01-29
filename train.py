@@ -4,6 +4,7 @@ import math
 import pickle
 from contextlib import nullcontext
 import platform
+from typing import Dict, Any
 
 import numpy as np
 import torch
@@ -125,6 +126,43 @@ def forward(idx, targets, config):
     else:
         loss = F.cross_entropy(logits.view(-1, logits.size(-1)), targets.view(-1), ignore_index=-1)
         return logits, loss
+
+def save_checkpoint(checkpoint: Dict[str, Any], path: str, use_atomic: bool = True) -> None:
+    """Save a checkpoint atomically to avoid corruption
+    
+    Args:
+        checkpoint: Dictionary containing checkpoint data
+        path: Path to save the checkpoint to
+        use_atomic: Whether to use atomic save with temporary file
+    """
+    print(f"\nSaving checkpoint to {path}")
+    
+    # Make sure output directory exists
+    os.makedirs(os.path.dirname(path), exist_ok=True)
+    print(f"Created/verified output directory: {os.path.dirname(path)}")
+    
+    try:
+        if use_atomic:
+            # Save with a temporary file first
+            tmp_path = path + '.tmp'
+            print(f"Saving to temporary path: {tmp_path}")
+            torch.save(checkpoint, tmp_path)
+            print("Successfully saved to temporary file")
+            
+            # Atomic rename to final path
+            os.replace(tmp_path, path)
+            print(f"Successfully renamed to final path: {path}")
+        else:
+            # Direct save without atomic operation
+            torch.save(checkpoint, path)
+            print(f"Successfully saved checkpoint directly to: {path}")
+            
+    except Exception as e:
+        print(f"Error saving checkpoint: {str(e)}")
+        # Clean up temp file if it exists
+        if use_atomic and os.path.exists(tmp_path):
+            os.remove(tmp_path)
+        raise
 
 # -----------------------------------------------------------------------------
 # Training settings from DeepSeek paper
@@ -599,23 +637,9 @@ while True:
                         'best_val_loss': best_val_loss,
                     }
                     ckpt_path = os.path.join(out_dir, 'best_ckpt.pt')
-                    print(f"Checkpoint path: {ckpt_path}")
                     print(f"Improvement: {improvement:.6f}")
-                    
-                    # Make sure output directory exists
-                    os.makedirs(out_dir, exist_ok=True)
-                    print(f"Created/verified output directory: {out_dir}")
-                    
-                    # Save with a temporary file first
-                    tmp_path = ckpt_path + '.tmp'
-                    print(f"Saving to temporary path: {tmp_path}")
                     breakpoint()  # Debug checkpoint before save
-                    torch.save(checkpoint, tmp_path)
-                    print("Successfully saved to temporary file")
-                    
-                    # Atomic rename to final path
-                    os.replace(tmp_path, ckpt_path)
-                    print(f"Successfully renamed to final path: {ckpt_path}")
+                    save_checkpoint(checkpoint, ckpt_path)
                 except Exception as e:
                     print(f"Error saving checkpoint: {str(e)}")
 
@@ -631,22 +655,8 @@ while True:
                     'best_val_loss': best_val_loss,
                 }
                 ckpt_path = os.path.join(out_dir, f'ckpt_{iter_num:07d}.pt')
-                print(f"Checkpoint path: {ckpt_path}")
-                
-                # Make sure output directory exists
-                os.makedirs(out_dir, exist_ok=True)
-                print(f"Created/verified output directory: {out_dir}")
-                
-                # Save with a temporary file first
-                tmp_path = ckpt_path + '.tmp'
-                print(f"Saving to temporary path: {tmp_path}")
                 breakpoint()  # Debug checkpoint before save
-                torch.save(checkpoint, tmp_path)
-                print("Successfully saved to temporary file")
-                
-                # Atomic rename to final path
-                os.replace(tmp_path, ckpt_path)
-                print(f"Successfully renamed to final path: {ckpt_path}")
+                save_checkpoint(checkpoint, ckpt_path)
             except Exception as e:
                 print(f"Error saving checkpoint: {str(e)}")
             
