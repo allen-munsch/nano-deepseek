@@ -666,6 +666,69 @@ def train_iteration(model, optimizer, train_loader, scaler, iter_num, best_val_l
         
     return best_val_loss
 
+def calculate_loss(logits, targets, aux_loss):
+    """Calculate loss with Monte Carlo sampling"""
+    num_mc_samples = 10
+    mc_losses = []
+    mc_predictions = []
+    
+    for _ in range(num_mc_samples):
+        # Multiple sampling strategies
+        
+        # 1. Gumbel-Softmax sampling
+        gumbel_noise = -torch.log(-torch.log(torch.rand_like(logits) + 1e-10))
+        gumbel_logits = (logits + gumbel_noise) / 0.1
+        
+        # 2. Temperature sampling
+        temp_scaled = logits / 0.8  # Temperature parameter
+        
+        # 3. Top-k sampling
+        top_k = 40
+        top_k_logits = torch.topk(logits, top_k, dim=-1)
+        top_k_mask = torch.zeros_like(logits).scatter_(-1, top_k_logits.indices, 1.0)
+        
+        # Combine sampling strategies
+        combined_logits = (gumbel_logits + temp_scaled) * top_k_mask
+        sampled_probs = F.softmax(combined_logits, dim=-1)
+        
+        # Add exploration noise
+        exploration_noise = torch.randn_like(sampled_probs) * 0.05
+        sampled_probs = F.softmax(torch.log(sampled_probs + 1e-10) + exploration_noise, dim=-1)
+        
+        # Calculate losses with different metrics
+        ce_loss = F.cross_entropy(
+            sampled_probs.view(-1, sampled_probs.size(-1)),
+            targets[:, :sampled_probs.size(1)].contiguous().view(-1)
+        )
+        
+        # KL divergence loss for regularization
+        kl_loss = F.kl_div(
+            F.log_softmax(logits, dim=-1),
+            sampled_probs,
+            reduction='batchmean'
+        )
+        
+        # Combine losses
+        combined_loss = ce_loss + 0.1 * kl_loss
+        mc_losses.append(combined_loss)
+        mc_predictions.append(sampled_probs)
+    
+    # Compute statistics across MC samples
+    mc_losses = torch.stack(mc_losses)
+    mc_predictions = torch.stack(mc_predictions)
+    
+    # Mean and uncertainty estimation
+    main_loss = mc_losses.mean()
+    uncertainty = mc_losses.std()
+    
+    # Prediction diversity penalty
+    pred_mean = mc_predictions.mean(dim=0)
+    pred_std = mc_predictions.std(dim=0)
+    diversity_penalty = -0.1 * pred_std.mean()  # Encourage diverse predictions
+    
+    # Combine all loss components
+    return (main_loss + aux_loss + 0.1 * uncertainty + diversity_penalty) / grad_accum
+
 def execute_training_step(model, optimizer, X, Y, scaler, iter_num):
     """Execute core training logic for a single step"""
     optimizer.zero_grad(set_to_none=True)
