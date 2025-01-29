@@ -180,11 +180,30 @@ elif init_from == 'resume':
 class ModelWrapper(torch.nn.Module):
     def __init__(self, config):
         super().__init__()
-        self.config = {k: torch.nn.Parameter(v) if isinstance(v, torch.Tensor) else v 
-                      for k,v in config.items()}
+        # Create actual trainable parameters
+        self.token_embedding = torch.nn.Embedding(config['vocab_size'], config['n_embd'])
+        self.position_embedding = torch.nn.Parameter(torch.zeros(1, config['block_size'], config['n_embd']))
+        self.dropout = torch.nn.Dropout(config['dropout'])
+        self.ln_f = torch.nn.LayerNorm(config['n_embd'])
+        self.head = torch.nn.Linear(config['n_embd'], config['vocab_size'], bias=False)
+        self.config = config
     
     def forward(self, idx, targets=None):
-        return forward(idx, targets, self.config)
+        B, T = idx.shape
+        # Get token embeddings
+        tok_emb = self.token_embedding(idx)
+        # Add positional embeddings
+        pos_emb = self.position_embedding[:, :T, :]
+        x = self.dropout(tok_emb + pos_emb)
+        # Final layernorm and head
+        x = self.ln_f(x)
+        logits = self.head(x)
+        
+        if targets is None:
+            return logits, None
+        else:
+            loss = F.cross_entropy(logits.view(-1, logits.size(-1)), targets.view(-1), ignore_index=-1)
+            return logits, loss
 
 model = ModelWrapper(config)
 model.to(device)
