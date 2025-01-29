@@ -552,7 +552,7 @@ while True:
             early_stopping_history.pop(0)  # Remove oldest loss
             
         # Save best model checkpoint
-        if losses['val'] < best_val_loss:
+        if losses['val']['loss'] < best_val_loss:
             improvement = best_val_loss - losses['val']
             best_val_loss = losses['val']
             if iter_num > 0:
