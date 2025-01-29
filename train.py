@@ -212,12 +212,44 @@ class ModelWrapper(torch.nn.Module):
         self.token_embedding = torch.nn.Embedding(config['vocab_size'], config['n_embd'])
         self.position_embedding = torch.nn.Parameter(torch.zeros(1, config['block_size'], config['n_embd']))
         self.dropout = torch.nn.Dropout(config['dropout'])
+        
+        # Attention projections
+        self.q_proj = torch.nn.Linear(config['n_embd'], config['n_embd'])
+        self.k_proj = torch.nn.Linear(config['n_embd'], config['n_embd'])
+        self.v_proj = torch.nn.Linear(config['n_embd'], config['n_embd'])
+        
         self.ln_f = torch.nn.LayerNorm(config['n_embd'])
         self.head = torch.nn.Linear(config['n_embd'], config['vocab_size'], bias=False)
         self.config = config
     
+    def monte_carlo_attention(self, q, k, v, num_samples=64):
+        # q, k, v shape: (batch, seq_len, dim)
+        B, L, D = q.shape
+        
+        # Compute attention scores for a subset of random keys
+        indices = torch.randint(L, (num_samples,), device=q.device)
+        k_sampled = k[:, indices, :]  # (B, num_samples, D)
+        v_sampled = v[:, indices, :]  # (B, num_samples, D)
+        
+        # Compute attention scores
+        scores = torch.matmul(q, k_sampled.transpose(-2, -1)) / math.sqrt(D)  # (B, L, num_samples)
+        attn_weights = F.softmax(scores, dim=-1)
+        
+        # Apply attention
+        out = torch.matmul(attn_weights, v_sampled)  # (B, L, D)
+        return out
+
     def _forward_impl(self, x, pos_emb):
         x = self.dropout(x + pos_emb)
+        
+        # Project input to queries, keys, and values
+        q = self.q_proj(x)
+        k = self.k_proj(x)
+        v = self.v_proj(x)
+        
+        # Apply Monte Carlo attention
+        x = self.monte_carlo_attention(q, k, v)
+        
         x = self.ln_f(x)
         return self.head(x)
 
