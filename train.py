@@ -402,6 +402,9 @@ def get_lr(it):
     coeff = 0.5 * (1.0 + math.cos(math.pi * decay_ratio))
     return min_lr + coeff * (learning_rate - min_lr)
 
+# Number of Monte Carlo samples for evaluation
+num_mc_samples = 5
+
 @torch.no_grad()
 def estimate_loss():
     print("\nEstimating Loss:")
