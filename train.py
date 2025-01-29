@@ -214,8 +214,14 @@ def setup_training():
     """Setup distributed training and device configuration"""
     device = None  # Initialize device variable
     
-    # setup distributed training
+    # Initialize DDP variables with defaults
     ddp = int(os.environ.get('RANK', -1)) != -1
+    ddp_rank = 0
+    ddp_local_rank = 0
+    ddp_world_size = 1
+    master_process = True
+    
+    # setup distributed training if enabled
     if ddp:
         init_process_group(backend=backend)
         ddp_rank = int(os.environ['RANK'])
@@ -236,8 +242,6 @@ def setup_training():
                 torch.cuda.empty_cache()
                 torch.cuda.memory.set_per_process_memory_fraction(0.95)
     else:
-        master_process = True
-        ddp_world_size = 1
         device = get_device()
 
     # Print configuration if master process
