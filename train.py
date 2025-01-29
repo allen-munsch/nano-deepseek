@@ -10,22 +10,30 @@ from torch.nn import functional as F
 from torch.nn.parallel import DistributedDataParallel as DDP
 from torch.distributed import init_process_group, destroy_process_group
 import tiktoken
+from torch.cuda.amp import autocast
+from torch.distributed.fsdp import FullyShardedDataParallel as FSDP
+from torch.distributed.fsdp.wrap import transformer_auto_wrap_policy
 
 # -----------------------------------------------------------------------------
-# I/O 
+# Training settings from DeepSeek paper
 out_dir = 'out'
 eval_interval = 2000
 log_interval = 1
 eval_iters = 200
-eval_only = False 
-always_save_checkpoint = True 
+eval_only = False
+always_save_checkpoint = True
 init_from = 'scratch'
+
+# Model architecture settings
+num_experts = 8  # Number of experts in MoE layers
+expert_capacity = 1.25  # Capacity factor for load balancing
+num_tokens_predict = 2  # Multi-token prediction
 
 # DDP settings
 backend = 'nccl'
 
-# setup DDP
-ddp = int(os.environ.get('RANK', -1)) != -1  # is this a ddp run?
+# setup distributed training
+ddp = int(os.environ.get('RANK', -1)) != -1
 if ddp:
     init_process_group(backend=backend)
     ddp_rank = int(os.environ['RANK'])
@@ -33,7 +41,13 @@ if ddp:
     ddp_world_size = int(os.environ['WORLD_SIZE'])
     device = f'cuda:{ddp_local_rank}'
     torch.cuda.set_device(device)
-    master_process = ddp_rank == 0  # this process will do logging, checkpointing etc.
+    master_process = ddp_rank == 0
+    
+    # Enable FP8 training as mentioned in paper
+    torch.set_float32_matmul_precision('high')
+    if torch.cuda.is_available() and torch.cuda.get_device_capability()[0] >= 9:  # For H100s
+        torch.set_default_tensor_type(torch.cuda.FloatTensor)
+        torch.backends.cuda.matmul.allow_fp8_training = True
 else:
     master_process = True
     ddp_world_size = 1
@@ -58,9 +72,11 @@ class DataLoader:
         self.data = np.memmap(filename, dtype=np.uint16, mode='r')
     
     def get_batch(self):
-        ix = torch.randint(len(self.data) - block_size, (batch_size,))
+        ix = torch.randint(len(self.data) - block_size - num_tokens_predict, (batch_size,))
         x = torch.stack([torch.from_numpy((self.data[i:i+block_size]).astype(np.int64)) for i in ix])
-        y = torch.stack([torch.from_numpy((self.data[i+1:i+1+block_size]).astype(np.int64)) for i in ix])
+        # Get multiple next tokens for MTP training
+        y = torch.stack([torch.from_numpy((self.data[i+1:i+1+block_size+num_tokens_predict]).astype(np.int64)) 
+                        for i in ix])
         if device_type == 'cuda':
             x = x.pin_memory().to(device, non_blocking=True)
             y = y.pin_memory().to(device, non_blocking=True)
@@ -100,9 +116,14 @@ model.to(device)
 if ddp:
     model = DDP(model, device_ids=[ddp_local_rank])
 
-# Create optimizer
-optimizer = torch.optim.AdamW(model.parameters(), lr=learning_rate, 
-                            betas=(beta1, beta2), weight_decay=0.1)
+# Create optimizer with settings from paper
+optimizer = torch.optim.AdamW(
+    model.parameters(),
+    lr=learning_rate,
+    betas=(0.9, 0.95),  # Paper's recommended values
+    weight_decay=0.1,
+    fused=True  # Enable fused optimizer for better performance
+)
 if init_from == 'resume':
     optimizer.load_state_dict(checkpoint['optimizer'])
 
@@ -175,7 +196,7 @@ while True:
     if iter_num == 0 and eval_only:
         break
 
-    # forward backward update
+    # forward backward update with MTP and MoE handling
     model.train()
     X, Y = train_loader.get_batch()
     
@@ -183,12 +204,15 @@ while True:
     optimizer.zero_grad(set_to_none=True)
     for micro_step in range(grad_accum):
         if ddp:
-            # in DDP training we only need to sync gradients at the last micro step
             model.require_backward_grad_sync = (micro_step == grad_accum - 1)
         
-        with ctx:
-            logits, loss = model(X, Y)
-            loss = loss / grad_accum
+        with autocast(dtype=torch.float8 if torch.cuda.get_device_capability()[0] >= 9 else torch.float16):
+            # Multi-token prediction
+            logits, aux_loss = model(X, Y)
+            # Main loss for multiple token predictions
+            main_loss = F.cross_entropy(logits.view(-1, logits.size(-1)), Y[:, :num_tokens_predict].contiguous().view(-1))
+            # Combine losses
+            loss = (main_loss + aux_loss) / grad_accum
         
         # immediately async prefetch next batch while model is computing
         X, Y = train_loader.get_batch()
