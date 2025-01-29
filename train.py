@@ -301,6 +301,9 @@ class DataLoader:
 # -----------------------------------------------------------------------------
 # Initialize the model
 config = create_config()
+# Initialize device first
+device = get_device()
+
 if init_from == 'scratch':
     print("Initializing a new model from scratch")
 elif init_from == 'resume':
