@@ -536,8 +536,8 @@ while True:
     if iter_num % eval_interval == 0 and master_process:
         losses = estimate_loss()
         print(f"\nStep {iter_num}:")
-        print(f"Train loss: {losses['train']:.4f}")
-        print(f"Val loss: {losses['val']:.4f}")
+        print(f"Train loss: {losses['train']['loss']:.4f}")
+        print(f"Val loss: {losses['val']['loss']:.4f}")
         print(f"Learning rate: {lr:.6f}")
         
         # Early stopping check
