@@ -3,10 +3,12 @@ import time
 import math
 import pickle
 from contextlib import nullcontext
+import platform
 
 import numpy as np
 import torch
 from torch.nn import functional as F
+import torch.backends.mps
 from torch.nn.parallel import DistributedDataParallel as DDP
 from torch.distributed import init_process_group, destroy_process_group
 import tiktoken
@@ -24,16 +26,42 @@ warmup_iters = 2000
 grad_clip = 1.0
 grad_accum = 4
 dtype = 'float16'
-device_type = 'cuda' if torch.cuda.is_available() else 'cpu'
-ctx = nullcontext() if device_type == 'cpu' else torch.amp.autocast(device_type=device_type, dtype=torch.float16)
+# Determine device and precision based on hardware
+if torch.cuda.is_available():
+    device_type = 'cuda'
+    # Check if we have H100
+    has_h100 = torch.cuda.get_device_capability()[0] >= 9
+    # Default to FP16 for consumer GPUs
+    default_dtype = torch.float8 if has_h100 else torch.float16
+elif torch.backends.mps.is_available():
+    device_type = 'mps'  # Apple Silicon
+    default_dtype = torch.float16
+else:
+    device_type = 'cpu'
+    # Use bfloat16 for CPU as it's more numerically stable
+    default_dtype = torch.bfloat16 if torch.cuda.is_bf16_supported() else torch.float32
+
+ctx = nullcontext() if device_type == 'cpu' else torch.amp.autocast(device_type=device_type, dtype=default_dtype)
+
+# Enable memory efficient attention if available
+if hasattr(torch.nn.functional, 'scaled_dot_product_attention'):
+    torch.backends.cuda.enable_flash_sdp(True)
 
 def setup_device():
     """Setup the device for training"""
     global device
     if device_type == 'cuda':
         device = torch.device('cuda')
+        # Enable TF32 for better performance on Ampere+ GPUs
+        torch.backends.cuda.matmul.allow_tf32 = True
+        torch.backends.cudnn.allow_tf32 = True
+    elif device_type == 'mps':
+        device = torch.device('mps')
     else:
         device = torch.device('cpu')
+        # Enable memory efficient attention for CPU training
+        if hasattr(torch.nn.functional, 'scaled_dot_product_attention'):
+            torch.set_num_threads(os.cpu_count())
 
 def create_config():
     """Create model configuration"""
@@ -87,11 +115,16 @@ if ddp:
     torch.cuda.set_device(device)
     master_process = ddp_rank == 0
     
-    # Enable FP8 training as mentioned in paper
-    torch.set_float32_matmul_precision('high')
-    if torch.cuda.is_available() and torch.cuda.get_device_capability()[0] >= 9:  # For H100s
-        torch.set_default_tensor_type(torch.cuda.FloatTensor)
-        torch.backends.cuda.matmul.allow_fp8_training = True
+    # Configure precision and optimizations based on hardware
+    if device_type == 'cuda':
+        torch.set_float32_matmul_precision('high')
+        if torch.cuda.get_device_capability()[0] >= 9:  # H100
+            torch.set_default_tensor_type(torch.cuda.FloatTensor)
+            torch.backends.cuda.matmul.allow_fp8_training = True
+        else:  # Consumer GPUs
+            # Enable AMP for better memory efficiency
+            torch.cuda.empty_cache()
+            torch.cuda.memory.set_per_process_memory_fraction(0.95)
 else:
     master_process = True
     ddp_world_size = 1
@@ -250,7 +283,7 @@ while True:
         if ddp:
             model.require_backward_grad_sync = (micro_step == grad_accum - 1)
         
-        with autocast(dtype=torch.float8 if torch.cuda.get_device_capability()[0] >= 9 else torch.float16):
+        with autocast(dtype=default_dtype):
             # Multi-token prediction
             logits, aux_loss = model(X, Y)
             # Main loss for multiple token predictions
