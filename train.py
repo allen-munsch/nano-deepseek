@@ -145,8 +145,15 @@ torch.backends.cudnn.allow_tf32 = True
 class DataLoader:
     def __init__(self, split='train'):
         self.split = split
-        filename = os.path.join('data', 'openwebtext', f'{split}.bin')
-        self.data = np.memmap(filename, dtype=np.uint16, mode='r')
+        # Walk through data directory to find .bin files
+        data_dir = 'data'
+        for root, _, files in os.walk(data_dir):
+            for file in files:
+                if file == f'{split}.bin':
+                    filename = os.path.join(root, file)
+                    self.data = np.memmap(filename, dtype=np.uint16, mode='r')
+                    return
+        raise FileNotFoundError(f"Could not find {split}.bin in {data_dir} directory tree")
     
     def get_batch(self):
         ix = torch.randint(len(self.data) - block_size - num_tokens_predict, (batch_size,))
