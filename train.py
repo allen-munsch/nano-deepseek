@@ -20,10 +20,10 @@ from torch.distributed.fsdp.wrap import transformer_auto_wrap_policy
 # Training hyperparameters
 batch_size = 32
 block_size = 1024
-max_iters = 600000
+max_iters = 1000
 learning_rate = 3e-4
 min_lr = learning_rate/10
-warmup_iters = 2000
+warmup_iters = 10
 grad_clip = 1.0
 grad_accum = 4
 dtype = 'float16'
@@ -96,7 +96,7 @@ log_interval = 1
 eval_iters = 200
 eval_only = False
 always_save_checkpoint = True
-checkpoint_interval = 1000  # Save checkpoints every 1000 iterations
+checkpoint_interval = 2  # Save checkpoints every 2 iterations
 save_last_n_checkpoints = 5  # Keep last N checkpoints
 init_from = 'scratch'
 
