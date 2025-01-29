@@ -18,17 +18,34 @@ from torch.cuda.amp import autocast
 from torch.distributed.fsdp import FullyShardedDataParallel as FSDP
 from torch.distributed.fsdp.wrap import transformer_auto_wrap_policy
 
-# Training hyperparameters for faster training
-batch_size = 4     # Much smaller batch size
-block_size = 64    # Smaller context window
-max_iters = 100    # Fewer iterations for initial testing
-learning_rate = 3e-4
-min_lr = learning_rate/10
-warmup_iters = 20  # Shorter warmup
-grad_clip = 1.0
-grad_accum = 4
-dtype = 'float16'
-use_checkpoint = True  # Enable activation checkpointing
+# Model configuration
+def get_default_config():
+    """Get default configuration"""
+    return {
+        'batch_size': 4,     # Much smaller batch size
+        'block_size': 64,    # Smaller context window
+        'max_iters': 100,    # Fewer iterations for initial testing
+        'learning_rate': 3e-4,
+        'min_lr': 3e-5,      # learning_rate/10
+        'warmup_iters': 20,  # Shorter warmup
+        'grad_clip': 1.0,
+        'grad_accum': 4,
+        'dtype': 'float16',
+        'use_checkpoint': True  # Enable activation checkpointing
+    }
+
+# Training hyperparameters from config
+config = get_default_config()
+batch_size = config['batch_size']
+block_size = config['block_size']
+max_iters = config['max_iters']
+learning_rate = config['learning_rate']
+min_lr = config['min_lr']
+warmup_iters = config['warmup_iters']
+grad_clip = config['grad_clip']
+grad_accum = config['grad_accum']
+dtype = config['dtype']
+use_checkpoint = config['use_checkpoint']
 # Determine device and precision based on hardware
 if torch.cuda.is_available():
     device_type = 'cuda'
@@ -189,50 +206,55 @@ num_tokens_predict = 2  # Multi-token prediction
 # DDP settings
 backend = 'nccl'
 
-# setup distributed training
-ddp = int(os.environ.get('RANK', -1)) != -1
-if ddp:
-    init_process_group(backend=backend)
-    ddp_rank = int(os.environ['RANK'])
-    ddp_local_rank = int(os.environ['LOCAL_RANK'])
-    ddp_world_size = int(os.environ['WORLD_SIZE'])
-    device = f'cuda:{ddp_local_rank}'
-    torch.cuda.set_device(device)
-    master_process = ddp_rank == 0
+def setup_training():
+    """Setup distributed training and device configuration"""
+    global device, master_process, ddp_world_size
     
-    # Configure precision and optimizations based on hardware
-    if device_type == 'cuda':
-        torch.set_float32_matmul_precision('high')
-        if torch.cuda.get_device_capability()[0] >= 9:  # H100
-            torch.set_default_tensor_type(torch.cuda.FloatTensor)
-            torch.backends.cuda.matmul.allow_fp8_training = True
-        else:  # Consumer GPUs
-            # Enable AMP for better memory efficiency
-            torch.cuda.empty_cache()
-            torch.cuda.memory.set_per_process_memory_fraction(0.95)
-else:
-    master_process = True
-    ddp_world_size = 1
-    setup_device()
+    # setup distributed training
+    ddp = int(os.environ.get('RANK', -1)) != -1
+    if ddp:
+        init_process_group(backend=backend)
+        ddp_rank = int(os.environ['RANK'])
+        ddp_local_rank = int(os.environ['LOCAL_RANK'])
+        ddp_world_size = int(os.environ['WORLD_SIZE'])
+        device = f'cuda:{ddp_local_rank}'
+        torch.cuda.set_device(device)
+        master_process = ddp_rank == 0
+        
+        # Configure precision and optimizations based on hardware
+        if device_type == 'cuda':
+            torch.set_float32_matmul_precision('high')
+            if torch.cuda.get_device_capability()[0] >= 9:  # H100
+                torch.set_default_tensor_type(torch.cuda.FloatTensor)
+                torch.backends.cuda.matmul.allow_fp8_training = True
+            else:  # Consumer GPUs
+                # Enable AMP for better memory efficiency
+                torch.cuda.empty_cache()
+                torch.cuda.memory.set_per_process_memory_fraction(0.95)
+    else:
+        master_process = True
+        ddp_world_size = 1
+        setup_device()
 
-# -----------------------------------------------------------------------------
-tokens_per_iter = grad_accum * ddp_world_size * batch_size * block_size
-if master_process:
-    print("\n=== Training Configuration ===")
-    print(f"Device type: {device_type}")
-    print(f"Batch size: {batch_size}")
-    print(f"Block size: {block_size}")
-    print(f"Learning rate: {learning_rate}")
-    print(f"Gradient accumulation steps: {grad_accum}")
-    print(f"Tokens per iteration: {tokens_per_iter:,}")
-    print(f"Max iterations: {max_iters}")
-    print(f"Warmup iterations: {warmup_iters}")
-    print(f"Using dtype: {dtype}")
-    os.makedirs(out_dir, exist_ok=True)
+    # Print configuration if master process
+    if master_process:
+        tokens_per_iter = grad_accum * ddp_world_size * batch_size * block_size
+        print("\n=== Training Configuration ===")
+        print(f"Device type: {device_type}")
+        print(f"Batch size: {batch_size}")
+        print(f"Block size: {block_size}")
+        print(f"Learning rate: {learning_rate}")
+        print(f"Gradient accumulation steps: {grad_accum}")
+        print(f"Tokens per iteration: {tokens_per_iter:,}")
+        print(f"Max iterations: {max_iters}")
+        print(f"Warmup iterations: {warmup_iters}")
+        print(f"Using dtype: {dtype}")
+        os.makedirs(out_dir, exist_ok=True)
 
-torch.manual_seed(1337)
-torch.backends.cuda.matmul.allow_tf32 = True
-torch.backends.cudnn.allow_tf32 = True
+    # Set random seed and enable optimizations
+    torch.manual_seed(1337)
+    torch.backends.cuda.matmul.allow_tf32 = True
+    torch.backends.cudnn.allow_tf32 = True
 
 # -----------------------------------------------------------------------------
 # Data loading
@@ -794,5 +816,41 @@ while True:
     if iter_num > max_iters:
         break
 
-if ddp:
-    destroy_process_group()
+if __name__ == '__main__':
+    # Setup training environment
+    setup_training()
+    
+    # Initialize model and optimizer
+    model = ModelWrapper(create_config())
+    model.to(device)
+    
+    if ddp:
+        model = DDP(model, device_ids=[ddp_local_rank])
+    
+    optimizer = LAMB(
+        model.parameters(),
+        lr=learning_rate,
+        betas=(0.9, 0.999),
+        eps=1e-8,
+        weight_decay=0.01,
+        trust_clip=True
+    )
+    
+    # Training loop
+    try:
+        train_loader = DataLoader('train')
+        iter_num = 0
+        best_val_loss = float('inf')
+        early_stopping_history = []
+        
+        while True:
+            # Training logic here...
+            if iter_num > max_iters:
+                break
+            
+            # Your existing training loop code...
+            iter_num += 1
+            
+    finally:
+        if ddp:
+            destroy_process_group()
