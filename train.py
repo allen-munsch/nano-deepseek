@@ -90,10 +90,10 @@ def get_device():
 def create_config():
     """Create model configuration"""
     return {
-        'n_layer': 4,   # Smaller model
-        'n_head': 4,    # Fewer attention heads
-        'n_embd': 128,  # Much smaller embeddings
-        'vocab_size': 65, # should match prepare.py
+        'n_layer': 8,    # More layers
+        'n_head': 8,     # More attention heads
+        'n_embd': 512,   # Larger embeddings
+        'vocab_size': 50257,  # GPT-2 vocabulary size
         'block_size': block_size,
         'dropout': 0.1,
     }

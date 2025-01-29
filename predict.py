@@ -18,18 +18,18 @@ def load_model(checkpoint_path='out/best_ckpt.pt'):
     return model
 
 def load_encoder():
-    """Load the character encoder from meta.pkl"""
+    """Load the tokenizer from meta.pkl"""
     with open('data/openwebtext/meta.pkl', 'rb') as f:
         meta = pickle.load(f)
-    return meta['stoi'], meta['itos']
+    return tiktoken.get_encoding(meta['encoding_name'])
 
 def generate(model, start_text, max_tokens=100, temperature=0.8):
     """Generate text starting from start_text"""
-    # Load encoder
-    stoi, itos = load_encoder()
+    # Load tokenizer
+    enc = load_encoder()
 
-    # Convert start text to tensor
-    context = torch.tensor([stoi[c] for c in start_text], dtype=torch.long).unsqueeze(0)
+    # Convert start text to tokens
+    context = torch.tensor(enc.encode_ordinary(start_text), dtype=torch.long).unsqueeze(0)
 
     # Move model and context to device
     device = get_device()
@@ -44,37 +44,37 @@ def generate(model, start_text, max_tokens=100, temperature=0.8):
             # Get predictions
             logits, _ = model(context, None)
             logits = logits[:, -1, :] / temperature
-
-            # Apply softmax with temperature
-            probs = torch.softmax(logits, dim=-1)
-
-            # Filter unlikely tokens (optional)
-            top_k = 40  # Keep only top k tokens
-            top_k_probs, top_k_indices = torch.topk(probs, top_k)
             
-            # Renormalize probabilities for top-k
-            top_k_probs = top_k_probs / top_k_probs.sum()
-
+            # Apply sophisticated sampling
+            # Filter with top-k
+            top_k = 40
+            top_k_logits, top_k_indices = torch.topk(logits, top_k)
+            
+            # Apply softmax with temperature
+            probs = F.softmax(top_k_logits, dim=-1)
+            
             # Sample from filtered distribution
-            next_token_idx = torch.multinomial(top_k_probs, num_samples=1)
+            next_token_idx = torch.multinomial(probs, num_samples=1)
             next_token = top_k_indices[0, next_token_idx[0]]
 
-            # Stop if we generate a newline or special token
-            if itos[next_token.item()] in ['\n', '<|endoftext|>']:
+            # Stop if we generate end token
+            if next_token.item() == enc.eot_token:
                 break
 
             # Append to generated sequence
             generated.append(next_token.item())
             context = torch.cat([context, next_token.unsqueeze(0).unsqueeze(0)], dim=1)
 
-            # Optional: Stop if we generate too many special characters in a row
-            if len(generated) > 3:
-                last_chars = ''.join([itos[i] for i in generated[-3:]])
-                if not any(c.isalnum() or c.isspace() for c in last_chars):
+            # Check generated text quality
+            if len(generated) > 20:  # Check larger chunks
+                current_text = enc.decode(generated[-20:])
+                # Stop if generating repetitive or garbage text
+                if len(set(current_text)) < 5 or current_text.count(current_text[:3]) > 2:
                     break
 
-    # Convert back to text
-    generated_text = ''.join([itos[i] for i in generated])
+    # Convert tokens back to text
+    generated_tokens = generated
+    generated_text = enc.decode(generated_tokens)
     return start_text + generated_text
 
 if __name__ == '__main__':
