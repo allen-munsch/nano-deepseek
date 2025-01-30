@@ -90,10 +90,10 @@ def get_device():
 def create_config():
     """Create model configuration"""
     return {
-        'n_layer': 8,    # More layers
-        'n_head': 8,     # More attention heads
-        'n_embd': 512,   # Larger embeddings
-        'vocab_size': 50257,  # GPT-2 vocabulary size
+        'n_layer': 32,
+        'n_head': 8,
+        'n_embd': 512,
+        'vocab_size': 50257,
         'block_size': block_size,
         'dropout': 0.1,
     }
@@ -333,6 +333,42 @@ elif init_from == 'resume':
     iter_num = checkpoint['iter_num']
     best_val_loss = checkpoint['best_val_loss']
 
+def apply_rotary_emb(q, k, seq_len, dim, base=10000.0):
+    """
+    Apply rotary embeddings (sinusoidal positional encoding) to queries and keys.
+    
+    Parameters:
+    - q (Tensor): Query tensor of shape (batch_size, seq_len, dim)
+    - k (Tensor): Key tensor of shape (batch_size, seq_len, dim)
+    - seq_len (int): Length of the sequence (L)
+    - dim (int): Dimension of the embeddings (D)
+    - base (float): Scaling factor for the sinusoidal function (optional, default 10000.0)
+    
+    Returns:
+    - q_rot (Tensor): Rotated query tensor
+    - k_rot (Tensor): Rotated key tensor
+    """
+    device = q.device  # Get the device of the input tensor (q or k)
+    
+    # Calculate the position indices
+    position = torch.arange(seq_len, dtype=torch.float32, device=device).unsqueeze(1)  # shape: (seq_len, 1)
+    div_term = torch.exp(torch.arange(0., dim, 2.0, device=device) * -(math.log(base) / dim))  # shape: (dim/2,)
+    
+    # Apply the sinusoidal encoding (cosine and sine)
+    pos_enc = torch.zeros(seq_len, dim, device=device)  # shape: (seq_len, dim)
+    pos_enc[:, 0::2] = torch.sin(position * div_term)  # even indices (sine)
+    pos_enc[:, 1::2] = torch.cos(position * div_term)  # odd indices (cosine)
+
+    # Reshape pos_enc to match the batch size and apply to q and k
+    pos_enc = pos_enc.unsqueeze(0).expand(q.size(0), -1, -1)  # shape: (batch_size, seq_len, dim)
+
+    # Apply rotary embedding by multiplying q and k with positional encoding
+    q_rot = q * pos_enc  # element-wise multiplication (rotating q)
+    k_rot = k * pos_enc  # element-wise multiplication (rotating k)
+
+    return q_rot, k_rot
+
+
 # Convert config dict to nn.Module for DDP
 class ModelWrapper(torch.nn.Module):
     def __init__(self, config):
@@ -359,6 +395,8 @@ class ModelWrapper(torch.nn.Module):
     def monte_carlo_attention(self, q, k, v, num_samples=32, num_mc_samples=2):  # Reduced samples
         # q, k, v shape: (batch, seq_len, dim)
         B, L, D = q.shape
+        # Apply rotary embeddings to q and k
+        q, k = apply_rotary_emb(q, k, L, D)
         print(f"\nMonte Carlo Attention:")
         print(f"- Batch size: {B}")
         print(f"- Sequence length: {L}")
@@ -882,4 +920,3 @@ def calculate_loss(logits, targets, aux_loss):
     
     # Combine all loss components
     return (main_loss + aux_loss + 0.1 * uncertainty + diversity_penalty) / grad_accum
-

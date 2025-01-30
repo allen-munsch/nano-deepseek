@@ -65,7 +65,7 @@ def generate(model, start_text, max_tokens=100, temperature=0.8):
 
             # Append to generated sequence
             generated.append(next_token.item())
-            context = torch.cat([context, next_token.unsqueeze(0).unsqueeze(0)], dim=1)
+            context = torch.cat([context, next_token.unsqueeze(0)], dim=1)
 
             # Check generated text quality
             if len(generated) > 20:  # Check larger chunks
@@ -81,10 +81,10 @@ def generate(model, start_text, max_tokens=100, temperature=0.8):
 
 if __name__ == '__main__':
     # Load model
-    model = load_model()
+    model = load_model('out/ckpt_0000100.pt')
 
     # Generate text
-    prompt = "The quick brown fox"
+    prompt = "SEBASTIAN:\nPlease"
     print(f"\nPrompt: {prompt}")
     print("\nGenerated text:")
     print(generate(model, prompt, max_tokens=200, temperature=0.8))
