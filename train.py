@@ -216,10 +216,11 @@ early_stopping_patience = 5  # Number of evaluations to wait for improvement
 early_stopping_threshold = 0.001  # Minimum improvement required
 early_stopping_history = []  # Track validation losses
 
-# Model architecture settings
-num_experts = 8  # Number of experts in MoE layers
-expert_capacity = 1.25  # Capacity factor for load balancing
-num_tokens_predict = 2  # Multi-token prediction
+# Model architecture settings from DeepSeek paper
+num_experts = 32  # Increased number of experts
+expert_capacity = 2.0  # Higher capacity factor
+num_tokens_predict = 4  # More tokens predicted at once
+sparse_top_k = 32  # For sparse attention
 
 # DDP settings
 backend = 'nccl'
@@ -370,12 +371,30 @@ def apply_rotary_emb(q, k, seq_len, dim, base=10000.0):
 
 
 # Convert config dict to nn.Module for DDP
+from torch.nn import functional as F
+from fairscale.nn import MoE, Top2Gate
+
 class ModelWrapper(torch.nn.Module):
     def __init__(self, config):
         super().__init__()
-        # Create actual trainable parameters
+        # Embeddings
         self.token_embedding = torch.nn.Embedding(config['vocab_size'], config['n_embd'])
         self.position_embedding = torch.nn.Parameter(torch.zeros(1, config['block_size'], config['n_embd']))
+        
+        # MoE layers
+        self.moe_layers = torch.nn.ModuleList([
+            MoE(
+                dim=config['n_embd'],
+                num_experts=num_experts,
+                gate=Top2Gate(config['n_embd'], num_experts),
+                expert=torch.nn.Sequential(
+                    torch.nn.Linear(config['n_embd'], 4 * config['n_embd']),
+                    torch.nn.GELU(),
+                    torch.nn.Linear(4 * config['n_embd'], config['n_embd'])
+                ),
+                capacity_factor=expert_capacity
+            ) for _ in range(config['n_layer'])
+        ])
         
         # Multiple dropout layers for Monte Carlo dropout
         self.embed_dropout = torch.nn.Dropout(config['dropout'])
@@ -392,7 +411,34 @@ class ModelWrapper(torch.nn.Module):
         self.head = torch.nn.Linear(config['n_embd'], config['vocab_size'], bias=False)
         self.config = config
     
-    def monte_carlo_attention(self, q, k, v, num_samples=32, num_mc_samples=2):  # Reduced samples
+    def sparse_attention(self, q, k, v, mask=None):
+        """Sparse attention mechanism from DeepSeek paper"""
+        B, L, D = q.shape
+        
+        # Apply rotary embeddings
+        q, k = apply_rotary_emb(q, k, L, D)
+        
+        # Compute attention scores
+        scores = torch.matmul(q, k.transpose(-2, -1)) / math.sqrt(D)
+        
+        if mask is not None:
+            scores = scores.masked_fill(mask == 0, float('-inf'))
+        
+        # Get top-k attention for each query
+        topk_scores, topk_idx = scores.topk(sparse_top_k, dim=-1)
+        
+        # Create sparse attention pattern
+        sparse_scores = torch.zeros_like(scores).scatter_(-1, topk_idx, topk_scores)
+        
+        # Normalize scores
+        attn_weights = F.softmax(sparse_scores, dim=-1)
+        attn_weights = F.dropout(attn_weights, p=0.1, training=self.training)
+        
+        # Apply attention
+        out = torch.matmul(attn_weights, v)
+        return out
+
+    def monte_carlo_attention(self, q, k, v, num_samples=64, num_mc_samples=8):  # Increased samples for better estimation
         # q, k, v shape: (batch, seq_len, dim)
         B, L, D = q.shape
         # Apply rotary embeddings to q and k
@@ -445,7 +491,7 @@ class ModelWrapper(torch.nn.Module):
         print(f"- Attention uncertainty: {std_output.mean().item():.4f}")
         return output
 
-    def _forward_impl(self, x, pos_emb):
+    def _forward_impl(self, x, pos_emb, targets=None):
         # Apply dropouts even during inference for Monte Carlo dropout
         # Ensure pos_emb is truncated to match x's sequence length
         batch_size = x.size(0)  # Or pos_emb.size(0) — both should be the same
@@ -468,12 +514,23 @@ class ModelWrapper(torch.nn.Module):
         k = self.proj_dropout(self.k_proj(x))
         v = self.proj_dropout(self.v_proj(x))
         
-        # Apply Monte Carlo attention with dropout
-        x = self.attn_dropout(self.monte_carlo_attention(q, k, v))
+        # Apply sparse attention with dropout
+        x = self.attn_dropout(self.sparse_attention(q, k, v))
         
+        # Apply MoE layers
+        moe_loss = 0
+        for moe_layer in self.moe_layers:
+            x, l = moe_layer(x)
+            moe_loss += l
+            
         x = self.ln_f(x)
         x = self.final_dropout(x)
-        return self.head(x)
+        
+        # Multi-token prediction
+        logits = self.head(x)
+        
+        # Return MoE auxiliary loss
+        return logits, moe_loss
 
     def forward(self, idx, targets=None):
         B, T = idx.shape
