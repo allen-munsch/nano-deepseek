@@ -372,7 +372,7 @@ def apply_rotary_emb(q, k, seq_len, dim, base=10000.0):
 
 # Convert config dict to nn.Module for DDP
 from torch.nn import functional as F
-from fairscale.nn import MoE, Top2Gate
+from fairscale.nn.moe import MOELayer, Top2Gate
 
 class ModelWrapper(torch.nn.Module):
     def __init__(self, config):
@@ -383,7 +383,7 @@ class ModelWrapper(torch.nn.Module):
         
         # MoE layers
         self.moe_layers = torch.nn.ModuleList([
-            MoE(
+            MOELayer(
                 dim=config['n_embd'],
                 num_experts=num_experts,
                 gate=Top2Gate(config['n_embd'], num_experts),
