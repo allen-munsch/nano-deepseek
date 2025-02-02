@@ -384,8 +384,8 @@ class ModelWrapper(torch.nn.Module):
         # MoE layers
         self.moe_layers = torch.nn.ModuleList([
             MOELayer(
-                hidden_size=config['n_embd'],
-                expert=torch.nn.ModuleList([
+                d_model=config['n_embd'],
+                experts=torch.nn.ModuleList([
                     torch.nn.Sequential(
                         torch.nn.Linear(config['n_embd'], 4 * config['n_embd']),
                         torch.nn.GELU(),
@@ -393,8 +393,8 @@ class ModelWrapper(torch.nn.Module):
                     ) for _ in range(num_experts)
                 ]),
                 num_experts=num_experts,
-                k=2,  # Top-k gating
-                capacity_factor=expert_capacity
+                top_k=2,  # Top-k gating
+                noisy_gate_policy=None
             ) for _ in range(config['n_layer'])
         ])
         
