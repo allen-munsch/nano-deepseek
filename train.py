@@ -1,3 +1,4 @@
+from functools import lru_cache
 import os
 import time
 import math
@@ -9,6 +10,7 @@ from typing import Dict, Any
 import numpy as np
 import torch
 from torch.nn import functional as F
+import torch.distributed as dist
 import torch.backends.mps
 from torch.nn.parallel import DistributedDataParallel as DDP
 from torch.distributed import init_process_group, destroy_process_group
@@ -17,6 +19,8 @@ import tiktoken
 from torch.cuda.amp import autocast
 from torch.distributed.fsdp import FullyShardedDataParallel as FSDP
 from torch.distributed.fsdp.wrap import transformer_auto_wrap_policy
+from torch.nn import functional as F
+from fairscale.nn.moe import MOELayer, Top2Gate
 
 # Model configuration
 def get_default_config():
@@ -228,6 +232,8 @@ world_size = int(os.environ.get('WORLD_SIZE', 1))
 world_rank = int(os.environ.get('RANK', 0))
 local_rank = int(os.environ.get('LOCAL_RANK', 0))
 
+
+@lru_cache
 def setup_training():
     """Setup distributed training and device configuration"""
     device = None  # Initialize device variable
@@ -274,7 +280,7 @@ def setup_training():
     # Print configuration if master process
     if master_process:
         global tokens_per_iter
-        tokens_per_iter = grad_accum * ddp_world_size * batch_size * block_size
+        tokens_per_iter = grad_accum * world_size * batch_size * block_size
         print("\n=== Training Configuration ===")
         print(f"Device type: {device_type}")
         print(f"Batch size: {batch_size}")
@@ -291,7 +297,7 @@ def setup_training():
     torch.manual_seed(1337)
     torch.backends.cuda.matmul.allow_tf32 = True
     torch.backends.cudnn.allow_tf32 = True
-    return device, master_process, ddp_world_size, ddp, ddp_local_rank, tokens_per_iter
+    return device, master_process, world_size, ddp, ddp_local_rank, tokens_per_iter, group
 # -----------------------------------------------------------------------------
 # Data loading
 class DataLoader:
@@ -382,12 +388,8 @@ def apply_rotary_emb(q, k, seq_len, dim, base=10000.0):
     return q_rot, k_rot
 
 
-# Convert config dict to nn.Module for DDP
-from torch.nn import functional as F
-from fairscale.nn.moe import MOELayer, Top2Gate
-
 class ModelWrapper(torch.nn.Module):
-    def __init__(self, config):
+    def __init__(self, config, group=None):
         super().__init__()
         # Embeddings
         self.token_embedding = torch.nn.Embedding(config['vocab_size'], config['n_embd'])
@@ -399,7 +401,6 @@ class ModelWrapper(torch.nn.Module):
                 gate=Top2Gate(
                     model_dim=config['n_embd'],
                     num_experts=num_experts,
-                    use_fp32=True,
                 ),
                 experts=torch.nn.ModuleList([
                     torch.nn.Sequential(
@@ -408,7 +409,7 @@ class ModelWrapper(torch.nn.Module):
                         torch.nn.Linear(4 * config['n_embd'], config['n_embd'])
                     ) for _ in range(num_experts)
                 ]),
-                group=dist.group.WORLD if ddp else None,
+                group=group,
             ) for _ in range(config['n_layer'])
         ])
         
@@ -581,9 +582,9 @@ class ModelWrapper(torch.nn.Module):
             targets = targets[:, :T].reshape(-1)  # Flatten targets after truncating
             loss = F.cross_entropy(logits.view(-1, logits.size(-1)), targets, ignore_index=-1)
             return logits, loss
-
+*x, group = setup_training()
 device = get_device()
-model = ModelWrapper(config)
+model = ModelWrapper(config, group=group)
 model.to(device)
 
 # Wrap model in DDP
@@ -906,10 +907,10 @@ def train_model(model, optimizer, master_process):
 if __name__ == '__main__':
     try:
         # Setup training environment
-        device, master_process, ddp_world_size, ddp, ddp_local_rank, tokens_per_iter = setup_training()
+        device, master_process, ddp_world_size, ddp, ddp_local_rank, tokens_per_iter, group = setup_training()
         
         # Initialize model and optimizer
-        model = ModelWrapper(create_config())
+        model = ModelWrapper(create_config(), group=group)
         model.to(device)
         
         if ddp:
