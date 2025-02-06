@@ -223,28 +223,40 @@ num_tokens_predict = 4  # More tokens predicted at once
 sparse_top_k = 32  # For sparse attention
 
 # DDP settings
-backend = 'nccl'
+backend = 'nccl' if torch.cuda.is_available() else 'gloo'
+world_size = int(os.environ.get('WORLD_SIZE', 1))
+world_rank = int(os.environ.get('RANK', 0))
+local_rank = int(os.environ.get('LOCAL_RANK', 0))
 
 def setup_training():
     """Setup distributed training and device configuration"""
     device = None  # Initialize device variable
     
     # Initialize DDP variables with defaults
-    ddp = int(os.environ.get('RANK', -1)) != -1
-    ddp_rank = 0
-    ddp_local_rank = 0
-    ddp_world_size = 1
-    master_process = True
+    ddp = world_rank != -1
+    master_process = world_rank == 0
     
-    # setup distributed training if enabled
-    if ddp:
-        init_process_group(backend=backend)
-        ddp_rank = int(os.environ['RANK'])
-        ddp_local_rank = int(os.environ['LOCAL_RANK'])
-        ddp_world_size = int(os.environ['WORLD_SIZE'])
-        device = f'cuda:{ddp_local_rank}'
-        torch.cuda.set_device(device)
-        master_process = ddp_rank == 0
+    # Setup distributed training if enabled
+    if torch.cuda.is_available():
+        device = torch.device(f"cuda:{local_rank}")
+        if ddp:
+            torch.cuda.set_device(device)
+            init_process_group(backend=backend, rank=world_rank, 
+                             world_size=world_size)
+            group = dist.new_group(list(range(world_size)), 
+                                 use_local_synchronization=True)
+    elif torch.backends.mps.is_available():
+        device = torch.device("mps")
+        if ddp:
+            init_process_group(backend="gloo", rank=world_rank,
+                             world_size=world_size)
+            group = dist.new_group(list(range(world_size)))
+    else:
+        device = torch.device("cpu")
+        if ddp:
+            init_process_group(backend="gloo", rank=world_rank,
+                             world_size=world_size)
+            group = dist.new_group(list(range(world_size)))
         
         # Configure precision and optimizations based on hardware
         if device_type == 'cuda':
@@ -387,8 +399,11 @@ class ModelWrapper(torch.nn.Module):
                 gate=Top2Gate(
                     model_dim=config['n_embd'],
                     num_experts=num_experts,
+                    use_fp32=True,
                 ),
                 experts=torch.nn.ModuleList([
+                # Pass the distributed group
+                group=dist.group.WORLD if ddp else None,
                     torch.nn.Sequential(
                         torch.nn.Linear(config['n_embd'], 4 * config['n_embd']),
                         torch.nn.GELU(),
