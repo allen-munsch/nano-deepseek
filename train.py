@@ -268,8 +268,8 @@ def setup_training():
                 # Enable AMP for better memory efficiency
                 torch.cuda.empty_cache()
                 torch.cuda.memory.set_per_process_memory_fraction(0.95)
-    else:
-        device = get_device()
+        else:
+            device = get_device()
 
     # Print configuration if master process
     if master_process:
@@ -402,14 +402,13 @@ class ModelWrapper(torch.nn.Module):
                     use_fp32=True,
                 ),
                 experts=torch.nn.ModuleList([
-                # Pass the distributed group
-                group=dist.group.WORLD if ddp else None,
                     torch.nn.Sequential(
                         torch.nn.Linear(config['n_embd'], 4 * config['n_embd']),
                         torch.nn.GELU(),
                         torch.nn.Linear(4 * config['n_embd'], config['n_embd'])
                     ) for _ in range(num_experts)
                 ]),
+                group=dist.group.WORLD if ddp else None,
             ) for _ in range(config['n_layer'])
         ])
         
