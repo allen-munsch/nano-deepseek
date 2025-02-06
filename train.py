@@ -385,12 +385,8 @@ class ModelWrapper(torch.nn.Module):
         self.moe_layers = torch.nn.ModuleList([
             MOELayer(
                 gate=Top2Gate(
-                    config['n_embd'],
-                    num_experts,
-                    use_fp32=True,
-                    second_expert_policy='random',
-                    normalize_gate_prob_before_dropping=False,
-                    moe_eval_capacity_token_fraction=0.25
+                    model_dim=config['n_embd'],
+                    num_experts=num_experts,
                 ),
                 experts=torch.nn.ModuleList([
                     torch.nn.Sequential(
@@ -399,8 +395,6 @@ class ModelWrapper(torch.nn.Module):
                         torch.nn.Linear(4 * config['n_embd'], config['n_embd'])
                     ) for _ in range(num_experts)
                 ]),
-                num_experts=num_experts,
-                expert_capacity=int(expert_capacity * (config['block_size'] / num_experts))
             ) for _ in range(config['n_layer'])
         ])
         
