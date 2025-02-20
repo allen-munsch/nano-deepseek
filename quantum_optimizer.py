@@ -3,12 +3,11 @@ import torch.nn as nn
 from typing import List, Dict, Any
 import numpy as np
 
-class ParticleSwarmOptimizer(torch.optim.Optimizer):
-    """Particle swarm optimization with quantum-inspired exploration
+class StochasticParticleOptimizer(torch.optim.Optimizer):
+    """Particle swarm optimization with stochastic exploration
     
-    This is a classical optimization algorithm that uses concepts inspired by
-    quantum mechanics for better exploration of the parameter space. It does
-    NOT implement true quantum operations or provide quantum speedup."""
+    A classical optimization algorithm using particle swarm dynamics and
+    stochastic exploration for better search of the parameter space."""
     
     def __init__(self, params, lr=1e-3, momentum=0.9, 
                  n_particles=10, exploration_rate=0.1,
@@ -71,12 +70,11 @@ class ParticleSwarmOptimizer(torch.optim.Optimizer):
 
         return loss
 
-class ExploratoryAdam(torch.optim.Adam):
-    """Adam optimizer with enhanced exploration capabilities
+class AdaptiveAdam(torch.optim.Adam):
+    """Adam optimizer with enhanced exploration and adaptation
     
-    This optimizer extends Adam with additional exploration mechanisms
-    inspired by quantum concepts, but implemented classically. It does
-    NOT provide quantum speedup or true quantum operations."""
+    Extends Adam with additional exploration mechanisms and adaptive
+    learning strategies for better optimization."""
     
     def __init__(self, params, lr=1e-3, betas=(0.9, 0.999), eps=1e-8,
                  weight_decay=0, exploration_factor=0.1, 

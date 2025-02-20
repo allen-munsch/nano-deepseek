@@ -5,14 +5,14 @@ import numpy as np
 from typing import List, Tuple
 from quantum_circuit import QuantumProcessor
 
-class QuantumLayer(nn.Module):
-    """Neural network layer that interfaces with real quantum circuits via Qiskit.
+class ProbabilisticLayer(nn.Module):
+    """Neural network layer using probabilistic computations and Monte Carlo sampling.
     
-    This layer uses actual quantum computing operations through Qiskit, including:
-    - Real quantum state preparation
-    - Hardware-based noise models
-    - Error mitigation techniques
-    - Quantum measurements"""
+    This layer implements classical probabilistic algorithms including:
+    - Stochastic state preparation
+    - Monte Carlo sampling
+    - Noise-robust measurements
+    - Uncertainty estimation"""
     
     def __init__(self, n_qubits: int):
         super().__init__()
@@ -75,12 +75,8 @@ class QuantumLayer(nn.Module):
         self.prev_state = state.clone()
         return True
 
-    def _classical_to_quantum_inspired(self, state: torch.Tensor) -> torch.Tensor:
-        """Convert classical state to quantum-inspired representation
-        
-        Note: This is a classical approximation, not true quantum state preparation.
-        It mimics some quantum properties but cannot capture true quantum effects
-        like entanglement."""
+    def _prepare_probabilistic_state(self, state: torch.Tensor) -> torch.Tensor:
+        """Convert input to probabilistic representation with uncertainty tracking"""
         batch_size = state.shape[0]
         n_features = state.shape[-1]
         
