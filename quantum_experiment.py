@@ -9,7 +9,8 @@ This experiment validates key theoretical predictions from equations.tex:
 """
 
 import numpy as np
-from qiskit import QuantumCircuit, QuantumRegister, ClassicalRegister, execute, Aer
+from qiskit import QuantumCircuit, QuantumRegister, ClassicalRegister, Aer
+from qiskit.compiler import execute
 from qiskit.providers.aer import QasmSimulator
 from qiskit.quantum_info import state_fidelity, Operator
 from qiskit.providers.aer.noise import NoiseModel
