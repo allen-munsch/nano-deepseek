@@ -995,13 +995,12 @@ if __name__ == '__main__':
         if ddp:
             model = DDP(model, device_ids=[ddp_local_rank])
         
-        optimizer = LAMB(
-            model.parameters(),
+        optimizer = QuantumParticleOptimizer(
+            model.parameters(), 
             lr=learning_rate,
-            betas=(0.9, 0.999),
-            eps=1e-8,
-            weight_decay=0.01,
-            trust_clip=True
+            momentum=0.9,
+            n_particles=10,
+            exploration_rate=0.1
         )
         
         # Run training
