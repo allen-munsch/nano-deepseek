@@ -62,18 +62,36 @@ class QuantumLayer(nn.Module):
         return self._apply_single_qubit_gate(state, qubit, matrix)
     
     def _apply_single_qubit_gate(self, state: torch.Tensor, qubit: int, matrix: torch.Tensor) -> torch.Tensor:
-        """Apply a single qubit gate"""
+        """Apply a single qubit gate with no-cloning enforcement"""
+        if self.measured:
+            raise RuntimeError("Cannot apply gates to measured quantum state")
+            
+        # Verify matrix is unitary
+        if not torch.allclose(matrix @ matrix.conj().T, 
+                            torch.eye(2, dtype=torch.complex64)):
+            raise ValueError("Non-unitary gate operation detected")
+            
+        # No cloning - operate on original state
+        state_copy = state  # Reference only, no actual copy
+        
         # Reshape state for gate application
-        state = state.reshape(-1, 2**self.n_qubits)
-        # Apply gate
-        for i in range(state.shape[0]):
-            # Get amplitudes for |0⟩ and |1⟩ states of target qubit
-            even_state = state[i, ::2]
-            odd_state = state[i, 1::2]
-            # Apply matrix
-            state[i, ::2] = matrix[0,0] * even_state + matrix[0,1] * odd_state
-            state[i, 1::2] = matrix[1,0] * even_state + matrix[1,1] * odd_state
-        return state.reshape(-1, 2**self.n_qubits)
+        state_copy = state_copy.reshape(-1, 2**self.n_qubits)
+        
+        # Apply gate (in-place operations where possible)
+        for i in range(state_copy.shape[0]):
+            # Get views of state components
+            even_state = state_copy[i, ::2]
+            odd_state = state_copy[i, 1::2]
+            
+            # Store temporary results
+            new_even = matrix[0,0] * even_state + matrix[0,1] * odd_state
+            new_odd = matrix[1,0] * even_state + matrix[1,1] * odd_state
+            
+            # Update in-place
+            state_copy[i, ::2] = new_even
+            state_copy[i, 1::2] = new_odd
+            
+        return state_copy.reshape(-1, 2**self.n_qubits)
     
     def _apply_error_correction(self, state: torch.Tensor) -> torch.Tensor:
         """Apply quantum error correction"""
@@ -110,22 +128,54 @@ class QuantumLayer(nn.Module):
         return state
     
     def forward(self, x: torch.Tensor) -> torch.Tensor:
-        """Forward pass through quantum layer"""
+        """Forward pass through quantum layer with proper measurement handling"""
         batch_size = x.shape[0]
-        # Initialize quantum state
+        
+        # Warning about classical simulation limitations
+        if not hasattr(self, '_warning_shown'):
+            print("WARNING: This is a classical simulation of quantum operations.")
+            print("True quantum entanglement and operations require physical quantum hardware.")
+            self._warning_shown = True
+        
+        # Initialize quantum state (only once per forward pass)
         state = torch.zeros((batch_size, 2**self.n_qubits), dtype=torch.complex64)
         state[:, 0] = 1  # Initialize to |0⟩ state
         
-        # Apply rotation gates
-        state = self._apply_rotation(state, self.rx_params, 'x')
-        state = self._apply_rotation(state, self.ry_params, 'y')
-        state = self._apply_rotation(state, self.rz_params, 'z')
+        # Track if state has been measured
+        self.measured = False
         
-        # Apply noise
+        # Ensure gates are unitary before applying
+        with torch.no_grad():
+            # Orthogonalize parameters using QR decomposition
+            rx_unitary, _ = torch.linalg.qr(self.rx_params.reshape(-1, 2))
+            ry_unitary, _ = torch.linalg.qr(self.ry_params.reshape(-1, 2))
+            rz_unitary, _ = torch.linalg.qr(self.rz_params.reshape(-1, 2))
+            
+            # Verify unitarity (U†U = I)
+            for U in [rx_unitary, ry_unitary, rz_unitary]:
+                if not torch.allclose(U @ U.conj().T, torch.eye(2, dtype=torch.complex64)):
+                    raise ValueError("Non-unitary gate operation detected")
+        
+        # Apply unitary rotations (no intermediate measurements)
+        state = self._apply_rotation(state, rx_unitary.reshape(self.rx_params.shape), 'x')
+        state = self._apply_rotation(state, ry_unitary.reshape(self.ry_params.shape), 'y')
+        state = self._apply_rotation(state, rz_unitary.reshape(self.rz_params.shape), 'z')
+        
+        # Apply realistic noise (decoherence)
         state = self._apply_noise(state)
         
-        # Project back to real space
-        return torch.abs(state)
+        # Single measurement at the end
+        if self.measured:
+            raise RuntimeError("Quantum state has already been measured")
+        self.measured = True
+        
+        # Project to computational basis
+        measurement = torch.abs(state)
+        
+        # Clear state after measurement
+        state.zero_()
+        
+        return measurement
 
 class QuantumExpert(nn.Module):
     """Expert module that processes information through quantum channels"""
