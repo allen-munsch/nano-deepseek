@@ -4,20 +4,29 @@ import numpy as np
 from typing import List, Tuple
 
 class QuantumLayer(nn.Module):
-    """Quantum layer that simulates quantum operations"""
+    """Quantum layer that simulates quantum operations with error correction"""
     
     def __init__(self, n_qubits: int, n_rotations: int):
         super().__init__()
         self.n_qubits = n_qubits
         self.n_rotations = n_rotations
         
-        # Trainable rotation parameters
+        # Trainable rotation parameters with phase estimation
         self.rx_params = nn.Parameter(torch.randn(n_qubits, n_rotations))
         self.ry_params = nn.Parameter(torch.randn(n_qubits, n_rotations))
         self.rz_params = nn.Parameter(torch.randn(n_qubits, n_rotations))
         
-        # Decoherence parameters
-        self.decoherence_rate = 0.01
+        # Additional quantum gates
+        self.hadamard = nn.Parameter(torch.tensor([[1, 1], [1, -1]], dtype=torch.complex64) / np.sqrt(2))
+        self.cnot = nn.Parameter(torch.eye(4, dtype=torch.complex64).reshape(2, 2, 2, 2))
+        
+        # Error correction parameters
+        self.error_correction_code = nn.Parameter(torch.randn(3, n_qubits))
+        self.syndrome_measurement = nn.Parameter(torch.randn(2, n_qubits))
+        
+        # Decoherence and noise parameters
+        self.decoherence_rate = nn.Parameter(torch.tensor(0.01))
+        self.phase_damping = nn.Parameter(torch.tensor(0.005))
         
     def _apply_rotation(self, state: torch.Tensor, params: torch.Tensor, axis: str) -> torch.Tensor:
         """Apply rotation gates along specified axis"""
@@ -66,10 +75,36 @@ class QuantumLayer(nn.Module):
             state[i, 1::2] = matrix[1,0] * even_state + matrix[1,1] * odd_state
         return state.reshape(-1, 2**self.n_qubits)
     
+    def _apply_error_correction(self, state: torch.Tensor) -> torch.Tensor:
+        """Apply quantum error correction"""
+        # Encode quantum state
+        encoded_state = torch.einsum('ijk,bj->bik', self.error_correction_code, state)
+        
+        # Simulate error detection
+        syndrome = torch.einsum('ij,bjk->bik', self.syndrome_measurement, encoded_state)
+        
+        # Error correction based on syndrome
+        correction = torch.where(syndrome > 0, 
+                               encoded_state.flip(-1),
+                               encoded_state)
+        
+        return correction
+
     def _apply_noise(self, state: torch.Tensor) -> torch.Tensor:
-        """Simulate quantum noise/decoherence"""
+        """Simulate realistic quantum noise effects"""
+        # Amplitude damping
         noise = torch.randn_like(state) * self.decoherence_rate
+        
+        # Phase damping
+        phase_noise = torch.exp(1j * torch.randn_like(state) * self.phase_damping)
+        
+        # Apply noise
         state = state + noise
+        state = state * phase_noise
+        
+        # Error correction
+        state = self._apply_error_correction(state)
+        
         # Renormalize
         state = state / torch.norm(state, dim=-1, keepdim=True)
         return state

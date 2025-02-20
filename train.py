@@ -8,6 +8,7 @@ import platform
 from typing import Dict, Any, List, Tuple
 
 from quantum_layer import QuantumLayer, QuantumExpert, quantum_loss
+from quantum_optimizer import QuantumInspiredOptimizer, QuantumAdam
 
 import numpy as np
 import torch
@@ -668,14 +669,22 @@ class LAMB(torch.optim.Optimizer):
         
         return loss
 
-# Create optimizer with LAMB
-optimizer = LAMB(
+# Create quantum-enhanced optimizer
+optimizer = QuantumAdam(
     model.parameters(),
     lr=learning_rate,
-    betas=(0.9, 0.999),  # DeepSeek beta values
+    betas=(0.9, 0.999),
     eps=1e-8,
-    weight_decay=0.01,  # Reduced weight decay
-    trust_clip=True
+    weight_decay=0.01,
+    quantum_factor=0.1
+)
+
+# Add quantum-inspired optimizer for exploration
+quantum_optimizer = QuantumInspiredOptimizer(
+    model.parameters(),
+    lr=learning_rate * 0.1,
+    population_size=5,
+    mutation_rate=0.05
 )
 if init_from == 'resume':
     optimizer.load_state_dict(checkpoint['optimizer'])
