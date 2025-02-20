@@ -20,27 +20,63 @@ class QuantumProcessor:
         
     def prepare_quantum_state(self, classical_data):
         """Efficient quantum state preparation using Qiskit"""
-        # Validate backend constraints
+        from qiskit.circuit.library import StatePreparation
+        from qiskit.transpiler import CouplingMap
+        from qiskit.transpiler.passes import SabreLayout, SabreSwap
+        
+        # Get hardware constraints
         basis_gates = self.device_backend.configuration().basis_gates
-        coupling_map = self.device_backend.configuration().coupling_map
+        coupling_map = CouplingMap(
+            self.device_backend.configuration().coupling_map
+        )
         
-        # Create circuit respecting hardware constraints
-        circuit = QuantumCircuit(self.qr, self.cr)
-        
-        # Convert to complex amplitudes
+        # Normalize and prepare complex amplitudes
         amplitudes = classical_data.astype(np.complex128)
-        amplitudes = amplitudes / np.linalg.norm(amplitudes)
+        norm = np.sqrt(np.sum(np.abs(amplitudes) ** 2))
+        if norm > 1e-8:  # Check for zero vector
+            amplitudes = amplitudes / norm
+        else:
+            amplitudes = np.zeros_like(amplitudes)
+            amplitudes[0] = 1.0
+            
+        # Create circuit with efficient state preparation
+        circuit = QuantumCircuit(self.qr, self.cr)
+        state_prep = StatePreparation(
+            amplitudes,
+            normalize=True,
+            insert_barriers=True
+        )
+        circuit.compose(state_prep, inplace=True)
         
-        # Use Qiskit's state preparation
-        circuit.initialize(amplitudes, self.qr)
+        # Optimize circuit for hardware
+        # Use SABRE for better qubit mapping
+        layout_pass = SabreLayout(
+            coupling_map,
+            max_iterations=5,
+            seed=42
+        )
+        swap_pass = SabreSwap(
+            coupling_map,
+            heuristic='basic',
+            seed=42
+        )
         
-        # Optimize circuit
+        # Transpile with optimization
         transpiled = transpile(
             circuit,
+            backend=self.device_backend,
             basis_gates=basis_gates,
             coupling_map=coupling_map,
-            optimization_level=3
+            layout_method='sabre',
+            routing_method='sabre',
+            optimization_level=3,
+            seed_transpiler=42
         )
+        
+        # Validate circuit depth
+        depth = transpiled.depth()
+        if depth > 100:  # Arbitrary threshold, adjust based on device
+            print(f"Warning: Circuit depth {depth} may exceed coherence time")
                 
         return circuit
     
@@ -88,18 +124,41 @@ class QuantumProcessor:
     
     def _mitigate_readout_errors(self, measured_probs, circuit):
         """Apply proper readout error mitigation using Qiskit"""
-        # Create calibration circuits
-        meas_calibs = complete_meas_cal(qr=self.qr, cr=self.cr)
+        from qiskit.ignis.mitigation.measurement import (
+            complete_meas_cal, CompleteMeasFitter
+        )
         
-        # Execute calibration circuits
-        job = self.simulator.run(meas_calibs)
+        # Generate calibration circuits for all qubits
+        qubits = range(self.n_qubits)
+        cal_circuits, state_labels = complete_meas_cal(
+            qubit_list=qubits,
+            qr=self.qr,
+            cr=self.cr,
+            circlabel='measurement_calibration'
+        )
+        
+        # Execute calibration circuits with noise model
+        job = self.simulator.run(
+            cal_circuits,
+            noise_model=self.noise_model,
+            shots=8192  # More shots for better calibration
+        )
         cal_results = job.result()
         
-        # Create measurement fitter
-        meas_fitter = CompleteMeasFitter(cal_results, state_labels)
+        # Build calibration matrix
+        meas_fitter = CompleteMeasFitter(
+            cal_results,
+            state_labels,
+            circlabel='measurement_calibration'
+        )
+        
+        # Print calibration error info
+        print(f"Calibration matrix:\n{meas_fitter.cal_matrix}")
+        print(f"Readout error rate: {meas_fitter.readout_fidelity()}")
         
         # Apply correction
         mitigated_results = meas_fitter.filter.apply(measured_probs)
+        
         return mitigated_results
     
     def get_density_matrix(self, circuit):
