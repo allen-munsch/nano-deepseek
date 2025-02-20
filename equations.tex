@@ -493,6 +493,94 @@ y = \sum_e P(e|x)[\alpha E_{\text{quantum}}(x) + (1-\alpha)E_{\text{classical}}(
 \end{equation}
 with adaptive mixing coefficient $\alpha$.
 
+\section{Hardware Requirements}
+
+\subsection{Quantum Processing Requirements}
+For large-scale testing, the following quantum hardware specifications are needed:
+
+\subsubsection{Quantum Processor}
+Minimum requirements per node:
+\begin{itemize}
+\item Number of physical qubits: $N_q \geq 100$
+\item Coherence time: $T_2 \geq 100\mu s$
+\item Gate fidelity: $F_g \geq 99.9\%$
+\item Measurement fidelity: $F_m \geq 99\%$
+\item Connectivity: All-to-all or surface code compatible
+\end{itemize}
+
+\subsubsection{Control Electronics}
+\begin{itemize}
+\item DAC/ADC resolution: $\geq 14$ bits
+\item Sampling rate: $\geq 1$ GSa/s
+\item Control latency: $\leq 100$ ns
+\item Number of control channels: $\geq 2N_q$
+\end{itemize}
+
+\subsection{Classical Computing Infrastructure}
+Required classical computing resources:
+
+\subsubsection{Per Node Specifications}
+\begin{itemize}
+\item CPU: 64+ cores, $\geq 3.5$ GHz
+\item Memory: $\geq 512$ GB DDR5
+\item GPU: 8x H100 or equivalent
+\item Storage: $\geq 4$ TB NVMe SSD
+\item Network: $\geq 200$ Gb/s InfiniBand
+\end{itemize}
+
+\subsubsection{Cluster Requirements}
+For distributed training:
+\begin{equation}
+N_{\text{nodes}} = \left\lceil\frac{N_{\text{params}} \cdot B}{M_{\text{node}}}\right\rceil
+\end{equation}
+
+where:
+\begin{itemize}
+\item $N_{\text{params}}$: Total model parameters
+\item $B$: Batch size
+\item $M_{\text{node}}$: Per-node memory capacity
+\end{itemize}
+
+Minimum cluster configuration:
+\begin{itemize}
+\item Number of nodes: 32+
+\item Total GPUs: 256+
+\item Aggregate memory: $\geq 16$ TB
+\item Storage: $\geq 1$ PB parallel filesystem
+\item Network topology: Fat tree with $\leq 600$ ns latency
+\end{itemize}
+
+\subsection{Resource Scaling}
+Resource requirements scale with model size:
+
+\subsubsection{Memory Scaling}
+Total memory required:
+\begin{equation}
+M_{\text{total}} = N_{\text{params}} \cdot (16 + 4B) \text{ bytes}
+\end{equation}
+
+where $B$ is the number of bits for gradient accumulation.
+
+\subsubsection{Compute Scaling}
+FLOPs per forward pass:
+\begin{equation}
+C_{\text{forward}} = 2N_{\text{params}} \cdot S_{\text{seq}} \cdot B_{\text{size}}
+\end{equation}
+
+where:
+\begin{itemize}
+\item $S_{\text{seq}}$: Sequence length
+\item $B_{\text{size}}$: Batch size
+\end{itemize}
+
+\subsubsection{Network Bandwidth}
+Minimum network bandwidth per node:
+\begin{equation}
+BW_{\text{min}} = \frac{8N_{\text{params}}}{T_{\text{step}}} \text{ bytes/s}
+\end{equation}
+
+where $T_{\text{step}}$ is the target step time.
+
 \section{Future Experimental Validation}
 
 \subsection{Proposed Benchmarks}
