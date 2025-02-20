@@ -75,20 +75,14 @@ def test_error_correction(physical_error_rates=[0.001, 0.01, 0.05, 0.1],
         for p in physical_error_rates:
             # Create noise model
             noise_model = NoiseModel()
-            # Create proper quantum error channels
-            # X gate error
-            error_x = np.array([[0, 1], [1, 0]])
-            # Y gate error  
-            error_y = np.array([[0, -1j], [1j, 0]])
-            # Z gate error
-            error_z = np.array([[1, 0], [0, -1]])
-            
-            # Construct error operations with probabilities
+            # Create proper quantum error channels using Kraus operators
             error_ops = [
-                ([np.eye(2), 1-p]),  # No error
-                ([error_x, p/3]),    # X error
-                ([error_y, p/3]),    # Y error 
-                ([error_z, p/3])     # Z error
+                [
+                    (np.sqrt(1-p) * np.eye(2)).tolist(),  # No error
+                    (np.sqrt(p/3) * np.array([[0,1],[1,0]])).tolist(),  # X error
+                    (np.sqrt(p/3) * np.array([[0,-1j],[1j,0]])).tolist(),  # Y error
+                    (np.sqrt(p/3) * np.array([[1,0],[0,-1]])).tolist()  # Z error
+                ]
             ]
             
             noise_model.add_all_qubit_quantum_error(error_ops, ['x','y','z'])
