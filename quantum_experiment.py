@@ -65,8 +65,9 @@ def test_quantum_attention_speedup(n_qubits_range=None, shots=1000):
             # Apply controlled operations with phase tracking
             for i in range(n_qubits-1):
                 qc.cx(i, i+1)
-                # Add phase evolution
-                qc.rz(-0.1/_,i)  # Dephasing term
+                # Add phase evolution with safe division
+                dephasing = -0.1 / (_ + 1)  # Avoid division by zero
+                qc.rz(dephasing, i)  # Dephasing term
             qc.measure(qr, cr)
             
         backend = AerSimulator()
