@@ -120,106 +120,126 @@ class QuantumLayer(nn.Module):
         return state_copy.reshape(-1, 2**self.n_qubits)
     
     def _apply_error_correction(self, state: torch.Tensor) -> torch.Tensor:
-        """Apply quantum error correction following equations.tex formalism"""
-        # Encode state using stabilizer code
-        # |ψ_encoded⟩ = C|ψ_in⟩ where C is the encoding circuit
-        encoded_state = torch.einsum('ijk,bj->bik', self.error_correction_code, state)
+        """Apply Surface code quantum error correction"""
+        batch_size = state.shape[0]
+        
+        # Surface code parameters
+        d = 3  # Distance of the Surface code
+        n_physical = d * d  # Number of physical qubits
+        n_stabilizers = 2 * (d-1) * (d-1)  # Number of stabilizer measurements
+        
+        # Encode logical qubit into Surface code
+        encoded_state = self._surface_code_encode(state, d)
         
         # Apply noise channel
         noisy_state = self._apply_noise(encoded_state)
         
-        # Measure syndrome operators
-        # syndrome = M|ψ_noisy⟩ where M are the syndrome measurements
-        syndrome_x = torch.einsum('ij,bjk->bik', self.syndrome_measurement[:, :, 0], noisy_state)
-        syndrome_z = torch.einsum('ij,bjk->bik', self.syndrome_measurement[:, :, 1], noisy_state)
+        # Measure stabilizer operators (plaquette and vertex operators)
+        syndromes = self._measure_surface_stabilizers(noisy_state, d)
         
-        # Stabilizer measurements
-        stabilizer_x = (syndrome_x > 0).float()
-        stabilizer_z = (syndrome_z > 0).float()
+        # Minimum weight perfect matching for error correction
+        correction_ops = self._minimum_weight_matching(syndromes, d)
         
-        # Error detection using syndrome pattern
-        error_pattern = torch.cat([stabilizer_x, stabilizer_z], dim=-1)
-        
-        # Lookup recovery operation from syndrome table
-        recovery_ops = self._get_recovery_operations(error_pattern)
-        
-        # Apply recovery operations
+        # Apply correction operations
         corrected_state = torch.zeros_like(noisy_state)
-        for i in range(recovery_ops.size(0)):
-            # Apply X gates
-            x_correction = recovery_ops[i, :, 0]
-            corrected_state[i] = torch.where(x_correction.unsqueeze(-1) > 0,
-                                           noisy_state[i].flip(-1),
-                                           noisy_state[i])
+        for b in range(batch_size):
+            # Apply correction chain
+            corrected_state[b] = self._apply_correction_chain(
+                noisy_state[b], 
+                correction_ops[b],
+                d
+            )
+        
+        # Decode back to logical qubit
+        decoded_state = self._surface_code_decode(corrected_state, d)
+        
+        return decoded_state
+        
+    def _surface_code_encode(self, state: torch.Tensor, d: int) -> torch.Tensor:
+        """Encode logical qubit into d x d Surface code lattice"""
+        batch_size = state.shape[0]
+        n_physical = d * d
+        
+        # Initialize physical qubits in |+⟩ state
+        encoded = torch.ones((batch_size, n_physical, 2), dtype=torch.complex64, device=state.device)
+        encoded = encoded / np.sqrt(2)
+        
+        # Apply CNOT gates between data qubits according to Surface code
+        for i in range(d):
+            for j in range(d):
+                if i > 0 and j > 0:
+                    # Plaquette operator
+                    self._apply_stabilizer_circuit(encoded, i, j, d, 'plaquette')
+                if i < d-1 and j < d-1:
+                    # Vertex operator  
+                    self._apply_stabilizer_circuit(encoded, i, j, d, 'vertex')
+                    
+        # Encode logical state
+        logical_idx = d * d // 2  # Center qubit
+        encoded[:, logical_idx] = state
+        
+        return encoded
+        
+    def _measure_surface_stabilizers(self, state: torch.Tensor, d: int) -> torch.Tensor:
+        """Measure all stabilizer operators of the Surface code"""
+        batch_size = state.shape[0]
+        n_stabilizers = 2 * (d-1) * (d-1)
+        
+        # Initialize syndrome measurements
+        syndromes = torch.zeros((batch_size, n_stabilizers), device=state.device)
+        
+        idx = 0
+        # Measure plaquette operators (Z-type)
+        for i in range(1, d-1):
+            for j in range(1, d-1):
+                qubits = self._get_plaquette_qubits(i, j, d)
+                syndromes[:, idx] = self._measure_stabilizer(state, qubits, 'Z')
+                idx += 1
+                
+        # Measure vertex operators (X-type)
+        for i in range(1, d-1):
+            for j in range(1, d-1):
+                qubits = self._get_vertex_qubits(i, j, d)
+                syndromes[:, idx] = self._measure_stabilizer(state, qubits, 'X')
+                idx += 1
+                
+        return syndromes
+
+    def _minimum_weight_matching(self, syndromes: torch.Tensor, d: int) -> torch.Tensor:
+        """Implement minimum weight perfect matching for error correction"""
+        batch_size = syndromes.shape[0]
+        
+        # Find syndrome locations (defects)
+        defects = []
+        for b in range(batch_size):
+            syndrome = syndromes[b]
+            defect_locs = torch.nonzero(syndrome)
+            defects.append(defect_locs)
             
-            # Apply Z gates
-            z_correction = recovery_ops[i, :, 1]
-            corrected_state[i] = torch.where(z_correction.unsqueeze(-1) > 0,
-                                           -corrected_state[i],
-                                           corrected_state[i])
+        # For each batch, find minimum weight matching between defects
+        correction_ops = []
+        for defect_locs in defects:
+            if len(defect_locs) % 2 == 1:
+                # Add virtual defect at boundary
+                defect_locs = torch.cat([defect_locs, torch.tensor([[d*d]], device=defect_locs.device)])
             
-        # Verify correction using fidelity
-        fidelity = torch.abs(torch.sum(corrected_state.conj() * encoded_state, dim=-1))
-        
-        # If fidelity is too low, try alternative correction
-        alt_correction = torch.where(
-            fidelity < 0.9,
-            self._alternative_correction(noisy_state, error_pattern),
-            corrected_state
-        )
-        
-        return alt_correction
-        
-    def _get_recovery_operations(self, error_pattern: torch.Tensor) -> torch.Tensor:
-        """Get recovery operations from syndrome lookup table"""
-        # Initialize recovery operations
-        batch_size = error_pattern.size(0)
-        recovery = torch.zeros((batch_size, self.n_qubits, 2), device=error_pattern.device)
-        
-        # Syndrome lookup table (pre-computed)
-        # This could be expanded to handle more error patterns
-        for i in range(batch_size):
-            pattern = error_pattern[i]
-            if torch.all(pattern == 0):
-                continue  # No error detected
+            # Find pairs of defects that minimize total distance
+            matches = self._find_minimum_matches(defect_locs, d)
+            correction_ops.append(matches)
             
-            # Single qubit errors
-            for q in range(self.n_qubits):
-                # X error on qubit q
-                if pattern[q] == 1 and pattern[q + self.n_qubits] == 0:
-                    recovery[i, q, 0] = 1  # Apply X correction
-                # Z error on qubit q
-                elif pattern[q] == 0 and pattern[q + self.n_qubits] == 1:
-                    recovery[i, q, 1] = 1  # Apply Z correction
-                # Y error on qubit q
-                elif pattern[q] == 1 and pattern[q + self.n_qubits] == 1:
-                    recovery[i, q, 0] = 1  # Apply both X and Z
-                    recovery[i, q, 1] = 1
+        return torch.stack(correction_ops)
+
+    def _apply_correction_chain(self, state: torch.Tensor, correction_ops: torch.Tensor, d: int) -> torch.Tensor:
+        """Apply correction operations along the minimum weight paths"""
+        corrected = state.clone()
         
-        return recovery
-        
-    def _alternative_correction(self, state: torch.Tensor, error_pattern: torch.Tensor) -> torch.Tensor:
-        """Try alternative error correction strategy when primary fails"""
-        # Implement more sophisticated correction strategies here
-        # For now, just try inverting the error pattern
-        inv_pattern = 1 - error_pattern
-        recovery_ops = self._get_recovery_operations(inv_pattern)
-        
-        corrected_state = torch.zeros_like(state)
-        for i in range(recovery_ops.size(0)):
-            x_correction = recovery_ops[i, :, 0]
-            z_correction = recovery_ops[i, :, 1]
-            
-            temp_state = state[i]
-            # Apply corrections in reverse order
-            temp_state = torch.where(z_correction.unsqueeze(-1) > 0,
-                                   -temp_state,
-                                   temp_state)
-            corrected_state[i] = torch.where(x_correction.unsqueeze(-1) > 0,
-                                           temp_state.flip(-1),
-                                           temp_state)
-        
-        return corrected_state
+        for path in correction_ops:
+            # Apply X or Z corrections along the path
+            for qubit in path:
+                if qubit < d*d:  # Not a virtual defect
+                    corrected[qubit] = self._apply_correction(corrected[qubit], path.correction_type)
+                    
+        return corrected
 
     def _apply_noise(self, state: torch.Tensor) -> torch.Tensor:
         """Simulate realistic quantum noise effects per equations.tex noise model"""

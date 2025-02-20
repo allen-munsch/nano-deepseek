@@ -110,19 +110,18 @@ where $\eta_{\text{min}}=3\times10^{-5}$ and $\eta_{\text{max}}=3\times10^{-4}$.
 
 \section{Error Correction and Noise}
 
-\subsection{Error Correction}
-The error correction process with basic syndrome measurement:
+\subsection{Surface Code Error Correction}
+The Surface code error correction process:
 \begin{align*}
-|\psi_{\text{encoded}}\rangle &= \mathcal{C}|\psi_{\text{in}}\rangle \\
-|\psi_{\text{noisy}}\rangle &= (1 + \mathcal{N}(0, 0.01))|\psi_{\text{encoded}}\rangle \\
-\text{syndrome} &= \mathcal{M}|\psi_{\text{noisy}}\rangle \\
-|\psi_{\text{corrected}}\rangle &= \begin{cases}
-\text{flip}(|\psi_{\text{noisy}}\rangle) & \text{if syndrome} > 0 \\
-|\psi_{\text{noisy}}\rangle & \text{otherwise}
-\end{cases}
+|\psi_{\text{encoded}}\rangle &= \mathcal{S}_d|\psi_{\text{in}}\rangle \\
+|\psi_{\text{noisy}}\rangle &= \mathcal{N}|\psi_{\text{encoded}}\rangle \\
+\text{syndromes} &= \{s_p, s_v\} = \{\langle \psi_{\text{noisy}}|P_i|\psi_{\text{noisy}}\rangle, \langle \psi_{\text{noisy}}|V_j|\psi_{\text{noisy}}\rangle\} \\
+\mathcal{C} &= \text{MWPM}(\text{syndromes}) \\
+|\psi_{\text{corrected}}\rangle &= \prod_{c \in \mathcal{C}} X_c Z_c |\psi_{\text{noisy}}\rangle \\
+|\psi_{\text{out}}\rangle &= \mathcal{S}_d^\dagger|\psi_{\text{corrected}}\rangle
 \end{align*}
 
-where $\mathcal{C}$ is the encoding circuit, $\mathcal{M}$ is syndrome measurement, and flip() applies bit-flip correction.
+where $\mathcal{S}_d$ is the Surface code encoding for distance $d$, $P_i$ and $V_j$ are plaquette and vertex stabilizer operators, MWPM is minimum weight perfect matching, and $X_c, Z_c$ are Pauli corrections along correction chains $\mathcal{C}$.
 
 \subsection{Noise Model}
 The quantum noise simulation:
