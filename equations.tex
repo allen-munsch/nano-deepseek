@@ -75,6 +75,77 @@ These hypotheses are supported by both theoretical bounds from quantum computing
 
 [Previous sections 2-4 remain unchanged]
 
+\section{Quantum-Classical Interface}
+\subsection{State Preparation and Measurement}
+The quantum-classical interface manages bidirectional state conversion and measurement:
+
+\subsubsection{Classical to Quantum Conversion}
+For input tensor $x \in \mathbb{R}^n$, the quantum state preparation is:
+\begin{equation}
+|\psi_{\text{in}}\rangle = \frac{1}{\sqrt{\sum_i |x_i|^2 + \epsilon}} \sum_{i=0}^{n-1} x_i|i\rangle
+\end{equation}
+
+with numerical stability parameter $\epsilon=10^{-8}$ and normalization constraint:
+\begin{equation}
+\left|\sum_i |\langle i|\psi_{\text{in}}\rangle|^2 - 1\right| \leq 10^{-6}
+\end{equation}
+
+\subsubsection{Phase Encoding}
+Complex phases are encoded as:
+\begin{equation}
+\phi_i = \text{angle}(x_i + i\epsilon) + \theta_i
+\end{equation}
+
+where $\theta_i$ are learnable parameters and the quantum state becomes:
+\begin{equation}
+|\psi\rangle = \sum_i |x_i|e^{i\phi_i}|i\rangle
+\end{equation}
+
+\subsubsection{Batched Execution}
+For batch size $B$ and circuit depth $L$, the execution time scales as:
+\begin{equation}
+T_{\text{exec}} = O\left(\frac{B}{N_{\text{devices}}} \cdot L \cdot T_{\text{gate}}\right)
+\end{equation}
+
+\subsection{Error Mitigation}
+The interface implements comprehensive error mitigation:
+
+\subsubsection{Readout Error Correction}
+Using calibration matrix $M_{ij}$ for measurement correction:
+\begin{equation}
+p_{\text{true}}(i) = \sum_j M_{ij}^{-1} p_{\text{meas}}(j)
+\end{equation}
+
+with calibration overhead:
+\begin{equation}
+T_{\text{cal}} = O(2^{N_q} \cdot N_{\text{shots}})
+\end{equation}
+
+\subsubsection{Gate Error Mitigation}
+Gate errors are mitigated through:
+\begin{equation}
+U_{\text{ideal}} = \prod_{l=1}^L U_l \approx \sum_k c_k \prod_{l=1}^L U_l^{(k)}
+\end{equation}
+
+where $U_l^{(k)}$ are noisy implementations and $c_k$ are correction coefficients.
+
+\subsection{Resource Management}
+The interface manages quantum resources through:
+
+\subsubsection{Circuit Scheduling}
+For $N_c$ concurrent circuits:
+\begin{equation}
+\text{Utilization} = \min\left(1, \frac{N_c}{N_{\text{devices}}}\right)
+\end{equation}
+
+\subsubsection{Memory Management}
+Quantum state memory requirements:
+\begin{equation}
+M_{\text{quantum}} = O(2^{N_q} \cdot B \cdot P)
+\end{equation}
+
+where $P$ is precision in bits.
+
 \section{Quantum Monte Carlo Integration}
 \subsection{Theoretical Foundation}
 We propose a novel quantum-enhanced Monte Carlo sampling method that combines the efficiency of stochastic sampling with quantum speedup:
