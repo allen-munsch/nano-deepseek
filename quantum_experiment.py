@@ -63,10 +63,11 @@ def test_quantum_attention_speedup(n_qubits_range=None, shots=1000):
                 qc.rz(theta, i)
             
             # Apply controlled operations with phase tracking
+            epsilon = 1e-8  # Numerical stability term from equations.tex
             for i in range(n_qubits-1):
                 qc.cx(i, i+1)
-                # Add phase evolution with safe division
-                dephasing = -0.1 / (_ + 1)  # Avoid division by zero
+                # Add phase evolution with epsilon term for stability
+                dephasing = -0.1 / (_ + 1 + epsilon)  # Safe division
                 qc.rz(dephasing, i)  # Dephasing term
             qc.measure(qr, cr)
             
@@ -245,8 +246,9 @@ def test_quantum_sampling(n_qubits_range=None, n_samples_range=None):
             for _ in range(n_samples):
                 # Generate random complex state vector
                 state = np.random.randn(2**n_qubits) + 1j*np.random.randn(2**n_qubits)
-                # Normalize
-                state = state / np.linalg.norm(state)
+                # Normalize with epsilon term from equations.tex
+                epsilon = 1e-8
+                state = state / (np.linalg.norm(state) + epsilon)
                 c_estimates.append(state)
             
             # Average the estimates
@@ -273,7 +275,10 @@ def test_quantum_sampling(n_qubits_range=None, n_samples_range=None):
                 idx = int(bitstring, 2)
                 q_state[idx] = np.sqrt(count/n_samples)
             
-            # Convert to Statevector for comparison
+            # Add epsilon for numerical stability per equations.tex
+            epsilon = 1e-8
+            q_state = q_state / (np.linalg.norm(q_state) + epsilon)
+            # Convert to Statevector for comparison 
             q_state = Statevector(q_state)
             q_error = 1 - state_fidelity(true_state, q_state)
             q_errors.append(q_error)
