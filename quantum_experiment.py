@@ -304,7 +304,9 @@ def main():
     
     print("\nTesting quantum attention speedup...")
     print("Testing architectures from 1 to 1M qubits...")
-    c_times, q_times = test_quantum_attention_speedup()
+    n_qubits_range = np.logspace(0, 6, num=20, dtype=int)
+    n_qubits_range = np.unique(n_qubits_range)
+    c_times, q_times = test_quantum_attention_speedup(n_qubits_range)
     print("\nAttention speedup results:")
     print("Number of qubits | Classical (s) | Quantum (s) | Speedup")
     print("-" * 55)
@@ -314,7 +316,9 @@ def main():
     
     print("\nTesting error correction...")
     print("Testing code distances up to 100 (10k physical qubits)...")
-    error_rates = test_error_correction()
+    physical_error_rates = np.logspace(-6, -1, num=6)
+    code_distances = [3, 5, 7, 11, 15, 21, 31, 51, 75, 100]
+    error_rates = test_error_correction(physical_error_rates, code_distances)
     print("\nError correction results:")
     print("Code distance | Physical error | Logical error")
     print("-" * 45)
@@ -324,7 +328,9 @@ def main():
     
     print("\nTesting quantum sampling efficiency...")
     print("Testing sampling across 1 to 1M qubit architectures...")
-    c_errors, q_errors = test_quantum_sampling()
+    n_samples_range = np.logspace(1, 5, num=10, dtype=int)
+    n_samples_range = np.unique(n_samples_range)
+    c_errors, q_errors = test_quantum_sampling(n_qubits_range, n_samples_range)
     print("\nSampling efficiency results:")
     print("Number of qubits | Samples | Classical err | Quantum err | Improvement")
     print("-" * 70)
