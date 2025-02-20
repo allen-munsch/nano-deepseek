@@ -22,20 +22,24 @@ This document describes the mathematical formulation of a quantum-enhanced langu
 \section{Model Architecture}
 
 \subsection{Quantum Layer Operations}
-The quantum layer applies a series of rotation gates and error correction:
-\begin{equation}
-|\psi_{\text{out}}\rangle = \mathcal{E}(\mathcal{R}_z(\theta_z)\mathcal{R}_y(\theta_y)\mathcal{R}_x(\theta_x))|\psi_{\text{in}}\rangle
-\end{equation}
+The quantum layer applies rotation gates, error correction, and noise simulation:
+\begin{align*}
+|\psi_{\text{out}}\rangle &= \mathcal{N}(\mathcal{E}(\mathcal{R}_z(\theta_z)\mathcal{R}_y(\theta_y)\mathcal{R}_x(\theta_x)))|\psi_{\text{in}}\rangle \\
+\mathcal{R}_x(\theta) &= \begin{pmatrix} \cos(\theta/2) & -i\sin(\theta/2) \\ -i\sin(\theta/2) & \cos(\theta/2) \end{pmatrix} \\
+\mathcal{R}_y(\theta) &= \begin{pmatrix} \cos(\theta/2) & -\sin(\theta/2) \\ \sin(\theta/2) & \cos(\theta/2) \end{pmatrix} \\
+\mathcal{R}_z(\theta) &= \begin{pmatrix} e^{-i\theta/2} & 0 \\ 0 & e^{i\theta/2} \end{pmatrix}
+\end{align*}
 
-where $\mathcal{R}_i$ represents rotation gates and $\mathcal{E}$ is the error correction operator.
+where $\mathcal{R}_i$ represents rotation gates, $\mathcal{E}$ is the error correction operator, and $\mathcal{N}$ is the noise simulation.
 
 \subsection{Monte Carlo Attention}
-The Monte Carlo attention mechanism with temperature scaling and Gumbel noise:
-\begin{equation}
-\text{Attention}(Q,K,V) = \frac{1}{N_{\text{MC}}}\sum_{i=1}^{N_{\text{MC}}} \text{softmax}\left(\frac{QK^T}{\sqrt{d}} + \mathcal{G}_i\tau\right)V
-\end{equation}
+The Monte Carlo attention mechanism with temperature scaling, Gumbel noise, and uncertainty estimation:
+\begin{align*}
+\text{Attention}(Q,K,V) &= \frac{1}{N_{\text{MC}}}\sum_{i=1}^{N_{\text{MC}}} \text{softmax}\left(\frac{QK^T}{\sqrt{d}} + \mathcal{G}_i\tau + \mathcal{N}_i\right)V \\
+\sigma^2_{\text{attn}} &= \text{std}\left(\{\text{softmax}(\frac{QK^T}{\sqrt{d}} + \mathcal{G}_i\tau + \mathcal{N}_i)V\}_{i=1}^{N_{\text{MC}}}\right)
+\end{align*}
 
-where $\tau=0.6$ is the temperature parameter and $\mathcal{G}_i$ is Gumbel noise.
+where $\tau=0.8$ is the temperature parameter, $\mathcal{G}_i$ is Gumbel noise, and $\mathcal{N}_i \sim \mathcal{N}(0, 0.05)$ is exploration noise.
 
 \subsection{Rotary Embeddings}
 Position-dependent rotation matrices applied to queries and keys:
@@ -75,16 +79,21 @@ where $\lambda_i$ are eigenvalues of the density matrix $\rho$ and $\epsilon=10^
 \section{Optimization}
 
 \subsection{Quantum Adam}
-The quantum-enhanced Adam optimizer with quantum momentum:
+The quantum-enhanced Adam optimizer with quantum phase estimation and momentum:
 \begin{align*}
 m_t &= \beta_1 m_{t-1} + (1-\beta_1)g_t \\
 v_t &= \beta_2 v_{t-1} + (1-\beta_2)g_t^2 \\
-\phi_t &= \angle(e^{i\pi p_t}) \\
-q_t &= q_{\text{factor}} \sin(\phi_t) m_{\text{quantum}} \\
-p_{t+1} &= p_t - \alpha\frac{m_t}{\sqrt{v_t} + \epsilon} + q_t
+|\psi_t\rangle &= e^{i p_t} \\
+|\tilde{\psi}_t\rangle &= \text{QFT}(|\psi_t\rangle) \\
+\phi_t &= \angle(|\tilde{\psi}_t\rangle) \\
+E_t &= |\tilde{\psi}_t\rangle|^2 \\
+q_t &= q_{\text{factor}} \sin(\phi_t) \sqrt{E_t} \\
+m^q_t &= 0.9 m^q_{t-1} + 0.1 q_t \\
+\Delta_t &= m^q_t \cos(\phi_t) + q_t \sin(\phi_t) \\
+p_{t+1} &= p_t - \alpha\frac{m_t}{\sqrt{v_t} + \epsilon} + \Delta_t
 \end{align*}
 
-where $q_{\text{factor}}=0.1$ controls quantum effects.
+where $q_{\text{factor}}=0.1$ controls quantum effects, QFT is quantum Fourier transform, and $m^q_t$ is quantum momentum.
 
 \subsection{Learning Rate Schedule}
 Cosine decay with linear warmup:
@@ -100,17 +109,21 @@ where $\eta_{\text{min}}=3\times10^{-5}$ and $\eta_{\text{max}}=3\times10^{-4}$.
 \section{Error Correction and Noise}
 
 \subsection{Error Correction}
-The error correction process:
+The error correction process with stabilizer measurements and recovery operations:
 \begin{align*}
 |\psi_{\text{encoded}}\rangle &= \mathcal{C}|\psi_{\text{in}}\rangle \\
-\text{syndrome} &= \mathcal{M}|\psi_{\text{encoded}}\rangle \\
-|\psi_{\text{corrected}}\rangle &= \begin{cases}
-|\psi_{\text{encoded}}\rangle_{\text{flip}} & \text{if syndrome} > 0 \\
-|\psi_{\text{encoded}}\rangle & \text{otherwise}
-\end{cases}
+|\psi_{\text{noisy}}\rangle &= \mathcal{N}(|\psi_{\text{encoded}}\rangle) \\
+\text{syndrome}_X &= \mathcal{M}_X|\psi_{\text{noisy}}\rangle \\
+\text{syndrome}_Z &= \mathcal{M}_Z|\psi_{\text{noisy}}\rangle \\
+\text{stabilizer}_X &= \Theta(\text{syndrome}_X) \\
+\text{stabilizer}_Z &= \Theta(\text{syndrome}_Z) \\
+\text{pattern} &= [\text{stabilizer}_X, \text{stabilizer}_Z] \\
+\mathcal{R} &= \text{RecoveryLookup}(\text{pattern}) \\
+|\psi_{\text{corrected}}\rangle &= \mathcal{R}|\psi_{\text{noisy}}\rangle \\
+F &= |\langle\psi_{\text{encoded}}|\psi_{\text{corrected}}\rangle|
 \end{align*}
 
-where $\mathcal{C}$ is the encoding matrix and $\mathcal{M}$ is the syndrome measurement.
+where $\mathcal{C}$ is the encoding circuit, $\mathcal{M}_{X,Z}$ are syndrome measurements, $\Theta$ is the Heaviside step function, $\mathcal{R}$ is the recovery operation, and $F$ is the fidelity.
 
 \subsection{Noise Model}
 The quantum noise simulation:
