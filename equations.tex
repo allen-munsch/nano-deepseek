@@ -299,6 +299,19 @@ Phase coherence is maintained via:
 \Phi_{\text{coherence}} = \left|\frac{1}{N}\sum_{i=1}^N \exp(i\phi_i)\right|^2
 \end{equation}
 
+Example application in text generation:
+For input sequence $x = (x_1,\ldots,x_n)$, the quantum attention computes:
+\begin{equation}
+p(x_{t+1}|x_{1:t}) = \text{QAttention}(W_qx_t, W_kX_{1:t}, W_vX_{1:t})
+\end{equation}
+
+Practical considerations:
+\begin{itemize}
+\item Temperature annealing schedule: $T_s$ decreases with training steps
+\item Adaptive noise scaling: $\sigma_{\text{explore}}$ reduces as model converges
+\item Top-k filtering: $k$ chosen based on vocabulary size
+\end{itemize}
+
 With phase evolution:
 \begin{equation}
 \frac{d\phi}{dt} = -\frac{i}{\hbar}[H, \phi] + \gamma_{\text{dephase}}
