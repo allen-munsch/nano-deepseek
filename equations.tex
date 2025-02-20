@@ -33,13 +33,17 @@ The quantum layer applies rotation gates, error correction, and noise simulation
 where $\mathcal{R}_i$ represents rotation gates, $\mathcal{E}$ is the error correction operator, and $\mathcal{N}$ is the noise simulation.
 
 \subsection{Monte Carlo Attention}
-The Monte Carlo attention mechanism with temperature scaling, Gumbel noise, and uncertainty estimation:
+The Monte Carlo attention mechanism combines multiple sampling strategies:
 \begin{align*}
-\text{Attention}(Q,K,V) &= \frac{1}{N_{\text{MC}}}\sum_{i=1}^{N_{\text{MC}}} \text{softmax}\left(\frac{QK^T}{\sqrt{d}} + \mathcal{G}_i\tau + \mathcal{N}_i\right)V \\
-\sigma^2_{\text{attn}} &= \text{std}\left(\{\text{softmax}(\frac{QK^T}{\sqrt{d}} + \mathcal{G}_i\tau + \mathcal{N}_i)V\}_{i=1}^{N_{\text{MC}}}\right)
+\text{logits}_{\text{gumbel}} &= \frac{\text{logits} + \mathcal{G}}{0.1} \\
+\text{logits}_{\text{temp}} &= \frac{\text{logits}}{0.8} \\
+\text{mask}_{\text{top-k}} &= \text{TopK}(\text{logits}, k=40) \\
+\text{logits}_{\text{combined}} &= (\text{logits}_{\text{gumbel}} + \text{logits}_{\text{temp}}) \odot \text{mask}_{\text{top-k}} \\
+\text{probs} &= \text{softmax}(\text{logits}_{\text{combined}}) \\
+\text{probs}_{\text{noisy}} &= \text{softmax}(\log(\text{probs} + \epsilon) + \mathcal{N}_{\text{explore}})
 \end{align*}
 
-where $\tau=0.8$ is the temperature parameter, $\mathcal{G}_i$ is Gumbel noise, and $\mathcal{N}_i \sim \mathcal{N}(0, 0.05)$ is exploration noise.
+where $\mathcal{G}$ is Gumbel noise, $\mathcal{N}_{\text{explore}} \sim \mathcal{N}(0, 0.05)$ is exploration noise, and $\epsilon=10^{-10}$.
 
 \subsection{Rotary Embeddings}
 Position-dependent rotation matrices applied to queries and keys:
@@ -55,17 +59,17 @@ where $\text{PE}$ is the positional encoding with base=10000.
 \section{Loss Functions}
 
 \subsection{Combined Loss}
-The total loss combines cross entropy, uncertainty, and quantum coherence:
+The total loss combines cross entropy, KL divergence, and uncertainty:
 \begin{equation}
-\mathcal{L}_{\text{total}} = \frac{1}{\text{grad\_accum}}\left(\mathcal{L}_{\text{CE}} + 0.1\mathcal{U} + \mathcal{D} + 0.01\mathcal{L}_{\text{quantum}}\right)
+\mathcal{L}_{\text{total}} = \frac{1}{\text{grad\_accum}}\left(\mathcal{L}_{\text{CE}} + 0.1\mathcal{L}_{\text{KL}} + 0.1\mathcal{U} + \mathcal{D}\right)
 \end{equation}
 
 where:
 \begin{align*}
 \mathcal{L}_{\text{CE}} &= -\sum_{i} y_i \log(\hat{y}_i) \\
+\mathcal{L}_{\text{KL}} &= \text{KL}(\log(\text{softmax}(\text{logits})) \| \text{probs}) \\
 \mathcal{U} &= \text{std}(\{\mathcal{L}_i\}_{i=1}^{N_{\text{MC}}}) \\
-\mathcal{D} &= -0.1 \cdot \text{std}(\{\hat{y}_i\}_{i=1}^{N_{\text{MC}}}) \\
-\mathcal{L}_{\text{quantum}} &= -\text{Tr}(\rho\log\rho)
+\mathcal{D} &= -0.1 \cdot \text{std}(\{\hat{y}_i\}_{i=1}^{N_{\text{MC}}})
 \end{align*}
 
 \subsection{Quantum Coherence}
@@ -79,21 +83,18 @@ where $\lambda_i$ are eigenvalues of the density matrix $\rho$ and $\epsilon=10^
 \section{Optimization}
 
 \subsection{Quantum Adam}
-The quantum-enhanced Adam optimizer with quantum phase estimation and momentum:
+The quantum-enhanced Adam optimizer with basic phase estimation:
 \begin{align*}
 m_t &= \beta_1 m_{t-1} + (1-\beta_1)g_t \\
 v_t &= \beta_2 v_{t-1} + (1-\beta_2)g_t^2 \\
-|\psi_t\rangle &= e^{i p_t} \\
-|\tilde{\psi}_t\rangle &= \text{QFT}(|\psi_t\rangle) \\
-\phi_t &= \angle(|\tilde{\psi}_t\rangle) \\
-E_t &= |\tilde{\psi}_t\rangle|^2 \\
-q_t &= q_{\text{factor}} \sin(\phi_t) \sqrt{E_t} \\
+\text{state}_t &= e^{i p_t} \\
+\text{phase}_t &= \angle(\text{FFT}(\text{state}_t)) \\
+q_t &= q_{\text{factor}} \sin(\text{phase}_t) \\
 m^q_t &= 0.9 m^q_{t-1} + 0.1 q_t \\
-\Delta_t &= m^q_t \cos(\phi_t) + q_t \sin(\phi_t) \\
-p_{t+1} &= p_t - \alpha\frac{m_t}{\sqrt{v_t} + \epsilon} + \Delta_t
+p_{t+1} &= p_t - \alpha\frac{m_t}{\sqrt{v_t} + \epsilon} + q_t
 \end{align*}
 
-where $q_{\text{factor}}=0.1$ controls quantum effects, QFT is quantum Fourier transform, and $m^q_t$ is quantum momentum.
+where $q_{\text{factor}}=0.1$ controls quantum effects and FFT is the fast Fourier transform.
 
 \subsection{Learning Rate Schedule}
 Cosine decay with linear warmup:
@@ -109,21 +110,18 @@ where $\eta_{\text{min}}=3\times10^{-5}$ and $\eta_{\text{max}}=3\times10^{-4}$.
 \section{Error Correction and Noise}
 
 \subsection{Error Correction}
-The error correction process with stabilizer measurements and recovery operations:
+The error correction process with basic syndrome measurement:
 \begin{align*}
 |\psi_{\text{encoded}}\rangle &= \mathcal{C}|\psi_{\text{in}}\rangle \\
-|\psi_{\text{noisy}}\rangle &= \mathcal{N}(|\psi_{\text{encoded}}\rangle) \\
-\text{syndrome}_X &= \mathcal{M}_X|\psi_{\text{noisy}}\rangle \\
-\text{syndrome}_Z &= \mathcal{M}_Z|\psi_{\text{noisy}}\rangle \\
-\text{stabilizer}_X &= \Theta(\text{syndrome}_X) \\
-\text{stabilizer}_Z &= \Theta(\text{syndrome}_Z) \\
-\text{pattern} &= [\text{stabilizer}_X, \text{stabilizer}_Z] \\
-\mathcal{R} &= \text{RecoveryLookup}(\text{pattern}) \\
-|\psi_{\text{corrected}}\rangle &= \mathcal{R}|\psi_{\text{noisy}}\rangle \\
-F &= |\langle\psi_{\text{encoded}}|\psi_{\text{corrected}}\rangle|
+|\psi_{\text{noisy}}\rangle &= (1 + \mathcal{N}(0, 0.01))|\psi_{\text{encoded}}\rangle \\
+\text{syndrome} &= \mathcal{M}|\psi_{\text{noisy}}\rangle \\
+|\psi_{\text{corrected}}\rangle &= \begin{cases}
+\text{flip}(|\psi_{\text{noisy}}\rangle) & \text{if syndrome} > 0 \\
+|\psi_{\text{noisy}}\rangle & \text{otherwise}
+\end{cases}
 \end{align*}
 
-where $\mathcal{C}$ is the encoding circuit, $\mathcal{M}_{X,Z}$ are syndrome measurements, $\Theta$ is the Heaviside step function, $\mathcal{R}$ is the recovery operation, and $F$ is the fidelity.
+where $\mathcal{C}$ is the encoding circuit, $\mathcal{M}$ is syndrome measurement, and flip() applies bit-flip correction.
 
 \subsection{Noise Model}
 The quantum noise simulation:
