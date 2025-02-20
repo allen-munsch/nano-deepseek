@@ -26,11 +26,39 @@ class QuantumProcessor:
         self.coupling_map = self.device_backend.configuration().coupling_map
         self.noise_model = NoiseModel.from_backend(self.device_backend)
         
-        # Initialize simulator with noise model
+        # Get detailed device noise characteristics
+        properties = self.device_backend.properties()
+        
+        # Build comprehensive noise model
+        self.noise_model = NoiseModel()
+        
+        # Add readout errors
+        for qubit in range(self.n_qubits):
+            readout_error = properties.readout_error(qubit)
+            if readout_error > 0:
+                self.noise_model.add_readout_error(
+                    [readout_error, 1-readout_error],
+                    [qubit]
+                )
+        
+        # Add gate errors with crosstalk
+        for gate in self.basis_gates:
+            for qubits in properties.gates_with_type(gate):
+                error_param = properties.gate_error(gate, qubits)
+                if error_param > 0:
+                    self.noise_model.add_quantum_error(
+                        error_param,
+                        gate,
+                        qubits
+                    )
+        
+        # Initialize simulator with detailed noise model
         self.simulator = AerSimulator(
             noise_model=self.noise_model,
             basis_gates=self.basis_gates,
-            coupling_map=self.coupling_map
+            coupling_map=self.coupling_map,
+            max_parallel_experiments=0,  # Disable parallel for better error tracking
+            max_parallel_shots=1
         )
         
         # For visualization
@@ -38,13 +66,15 @@ class QuantumProcessor:
         self.visualizer = circuit_drawer
         
     def prepare_quantum_state(self, classical_data):
-        """Hardware-efficient quantum state preparation"""
-        from qiskit.circuit.library import StatePreparation
+        """Hardware-efficient quantum state preparation with error tracking"""
+        from qiskit.circuit.library import StatePreparation, ZZFeatureMap
         from qiskit.transpiler import PassManager
         from qiskit.transpiler.passes import (
             BasicSwap, CXCancellation, Optimize1qGates,
-            CommutativeCancellation, OptimizeSwapBeforeMeasure
+            CommutativeCancellation, OptimizeSwapBeforeMeasure,
+            FixedPoint, ConsolidateBlocks, Optimize1qGatesDecomposition
         )
+        from qiskit.quantum_info import Statevector, partial_trace
         
         # Create optimization passes
         pm = PassManager([
@@ -171,30 +201,71 @@ class QuantumProcessor:
         return probabilities
     
     def _mitigate_readout_errors(self, measured_probs, circuit):
-        """Apply measurement error mitigation with Qiskit"""
+        """Apply comprehensive error mitigation with correlation tracking"""
         from qiskit.ignis.mitigation.measurement import (
-            complete_meas_cal, CompleteMeasFitter
+            complete_meas_cal, CompleteMeasFitter, TensoredMitigation
         )
         from qiskit.result import Result
         
-        # Generate calibration circuits
-        cal_circuits, state_labels = complete_meas_cal(
+        # Generate calibration circuits with correlation tracking
+        cal_circuits = []
+        # Single qubit calibration
+        single_cal, single_labels = complete_meas_cal(
             qubit_list=list(range(self.n_qubits)),
             qr=self.qr,
             cr=self.cr,
-            circlabel='measurement_calibration'
+            circlabel='single_qubit_cal'
+        )
+        cal_circuits.extend(single_cal)
+        
+        # Two-qubit correlation calibration
+        for i in range(self.n_qubits-1):
+            for j in range(i+1, self.n_qubits):
+                if [i,j] in self.coupling_map:
+                    corr_cal, corr_labels = complete_meas_cal(
+                        qubit_list=[i,j],
+                        qr=self.qr,
+                        cr=self.cr,
+                        circlabel=f'corr_cal_{i}_{j}'
+                    )
+                    cal_circuits.extend(corr_cal)
+        
+        # Transpile calibration circuits with crosstalk mitigation
+        from qiskit.transpiler.passes import CrosstalkAdaptiveSchedule
+        
+        # Create crosstalk-aware transpiler pass
+        crosstalk_pass = CrosstalkAdaptiveSchedule(
+            self.device_backend.properties(),
+            self.coupling_map
         )
         
-        # Transpile calibration circuits
+        # Transpile with crosstalk awareness
         cal_circuits = [
             transpile(
                 circ,
                 backend=self.device_backend,
                 basis_gates=self.basis_gates,
                 coupling_map=self.coupling_map,
-                optimization_level=3
+                optimization_level=3,
+                scheduling_method='alap',
+                instruction_durations=self.device_backend.properties().gate_length,
+                additional_optimization_passes=[crosstalk_pass]
             ) for circ in cal_circuits
         ]
+        
+        # Verify circuit depths against coherence times
+        for circ in cal_circuits:
+            depth = circ.depth()
+            max_time = self._calculate_circuit_time(circ)
+            min_coherence = min(
+                self.device_backend.properties().qubit_property(q, 'T2')
+                for q in range(self.n_qubits)
+            )
+            if max_time > 0.8 * min_coherence:
+                raise ValueError(
+                    f"Circuit time {max_time*1e6:.1f}μs exceeds "
+                    f"80% of coherence time {min_coherence*1e6:.1f}μs"
+                )
         
         # Execute calibration circuits with noise model
         job = self.simulator.run(
