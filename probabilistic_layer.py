@@ -400,7 +400,7 @@ class QuantumExpert(nn.Module):
     def __init__(self, input_dim: int, output_dim: int, n_qubits: int = 4):
         super().__init__()
         self.pre_quantum = nn.Linear(input_dim, 2**n_qubits)
-        self.quantum_layer = ProbabilisticLayer(n_qubits=n_qubits)
+        self.quantum_layer = Network_DQNN(qnn_arch=[2**n_qubits, 2**n_qubits])
         self.post_quantum = nn.Linear(2**n_qubits, output_dim)
         
     def forward(self, x: torch.Tensor) -> torch.Tensor:

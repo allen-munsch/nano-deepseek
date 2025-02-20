@@ -8,8 +8,8 @@ from contextlib import nullcontext
 import platform
 from typing import Dict, Any, List, Tuple
 
-from probabilistic_layer import ProbabilisticLayer, StochasticExpert, uncertainty_loss
-from stochastic_optimizer import ParticleSwarmOptimizer, AdaptiveAdam
+from probabilistic_layer import Network_DQNN, QuantumExpert, quantum_loss
+from stochastic_optimizer import QuantumAdam, QuantumParticleOptimizer
 
 import numpy as np
 import torch
@@ -629,7 +629,7 @@ class DeepSeekQNN(torch.nn.Module):
             return logits, loss
 *x, group = setup_training()
 device = get_device()
-model = ModelWrapper(config, group=group)
+model = DeepSeekQNN(config, group=group)
 model.to(device)
 
 # Wrap model in DDP
@@ -991,7 +991,7 @@ if __name__ == '__main__':
         device, master_process, ddp_world_size, ddp, ddp_local_rank, tokens_per_iter, group = setup_training()
         
         # Initialize model and optimizer
-        model = ModelWrapper(create_config(), group=group)
+        model = DeepSeekQNN(create_config(), group=group)
         model.to(device)
         
         if ddp:

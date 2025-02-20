@@ -1,3 +1,4 @@
+from typing import List, Optional, Any, Dict, Tuple
 from qiskit import QuantumCircuit, QuantumRegister, ClassicalRegister, transpile
 from qiskit.providers.aer import AerSimulator
 from qiskit.quantum_info import Operator, DensityMatrix
@@ -20,9 +21,9 @@ class QuantumCircuitProcessor:
         if self.required_qubits > self.device_backend.configuration().n_qubits:
             raise ValueError(f"Architecture requires {self.required_qubits} qubits but device has {self.device_backend.configuration().n_qubits}")
             
-        self.n_qubits = n_qubits
-        self.qr = QuantumRegister(n_qubits)
-        self.cr = ClassicalRegister(n_qubits)
+        self.n_qubits = self.num_qubits
+        self.qr = QuantumRegister(self.num_qubits)
+        self.cr = ClassicalRegister(self.num_qubits)
         
         # Get hardware constraints
         self.basis_gates = self.device_backend.configuration().basis_gates
