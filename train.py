@@ -410,19 +410,21 @@ def apply_rotary_emb(q, k, seq_len, dim, base=10000.0):
     return q_rot, k_rot
 
 
-class QNNModelWrapper(torch.nn.Module):
+class DeepSeekQNN(torch.nn.Module):
     def __init__(self, config, group=None):
         super().__init__()
-        # QNN architecture
-        self.qnn_arch = [config['n_embd'], config['n_embd'], config['n_embd']]
+        # QNN architecture from example.py
+        self.qnn_arch = [config['n_embd']] * (config['n_layer'] + 1)
         
-        # Embeddings
+        # Embeddings with quantum processing
         self.token_embedding = torch.nn.Embedding(config['vocab_size'], config['n_embd'])
         self.position_embedding = torch.nn.Parameter(torch.zeros(1, config['block_size'], config['n_embd']))
         
-        # Quantum processing
-        self.quantum_layer = QuantumProbabilisticLayer(n_qubits=int(np.log2(config['n_embd'])), 
-                                                     qnn_arch=self.qnn_arch)
+        # Quantum network from example.py
+        self.quantum_network = Network_DQNN(
+            qnn_arch=self.qnn_arch,
+            fidelity_measurement_method='big_swap'
+        )
         
         # Quantum experts
         self.quantum_experts = torch.nn.ModuleList([

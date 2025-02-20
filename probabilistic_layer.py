@@ -6,29 +6,36 @@ from typing import List, Tuple, Optional, Any
 from quantum_circuit import QuantumProcessor, QuantumCircuit
 from qiskit import QuantumCircuit, QuantumRegister, ClassicalRegister
 
-class QuantumProbabilisticLayer(nn.Module):
-    """Neural network layer using quantum circuits and Monte Carlo sampling.
+class Network_DQNN(nn.Module):
+    """Neural network layer using quantum circuits based on example.py architecture #9.
     
     This layer implements quantum algorithms including:
-    - Quantum state preparation
-    - Quantum circuit execution
-    - Monte Carlo sampling
-    - Error mitigation
-    - Uncertainty estimation"""
+    - CAN gates applied directly to corresponding qubits
+    - Quantum state preparation and evolution
+    - Error correction via Surface code
+    - Uncertainty estimation via Monte Carlo"""
     
-    def __init__(self, n_qubits: int):
+    def __init__(self, qnn_arch: List[int], fidelity_measurement_method: str = 'big_swap'):
         super().__init__()
-        self.n_qubits = n_qubits
+        assert qnn_arch[0] == qnn_arch[-1], "Not a valid QNN-Architecture."
         
-        # Initialize quantum processor
-        self.quantum_processor = QuantumProcessor(n_qubits)
+        self.fid_meas_method = fidelity_measurement_method
+        self.qnn_arch = qnn_arch
+        self.num_qubits = qnn_arch[0]
         
-        # Trainable parameters for quantum operations
-        self.rotation_params = nn.Parameter(torch.randn(3, n_qubits))  # rx, ry, rz
+        # Calculate number of parameters per equations.tex
+        self.num_params = sum([qnn_arch[l]*qnn_arch[l+1]*3 + (qnn_arch[l])*3 
+                             for l in range(len(qnn_arch)-1)]) + qnn_arch[-1]*3
         
-        # Track quantum state evolution
-        self.current_circuit = None
-        self.measured = False
+        self.params_per_layer = [self.qnn_arch[l]*self.qnn_arch[l+1]*3 + (self.qnn_arch[l])*3 
+                                for l in range(len(qnn_arch)-1)]
+        
+        # Initialize parameters randomly
+        self.params = nn.Parameter(torch.randn(self.num_params))
+        
+        # Setup auxiliary qubits for error correction
+        self.auxillary_qubits = 0 if fidelity_measurement_method == "destructive_swap" else 1
+        self.required_qubits = sum(self.qnn_arch) + self.qnn_arch[0] + self.auxillary_qubits
         
     def _apply_rotation(self, state: torch.Tensor, params: torch.Tensor, axis: str) -> torch.Tensor:
         """Apply quantum rotation gates using true quantum operations"""

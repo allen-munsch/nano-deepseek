@@ -3,28 +3,25 @@ import torch.nn as nn
 from typing import List, Dict, Any
 import numpy as np
 
-class QuantumParticleOptimizer(torch.optim.Optimizer):
-    """Quantum-enhanced particle swarm optimization
+class QuantumAdam(torch.optim.Optimizer):
+    """Quantum-enhanced Adam optimizer from equations.tex
     
-    A hybrid quantum-classical optimization algorithm using quantum circuits
-    for exploration and classical PSO for exploitation."""
+    Implements quantum Fourier transform and phase estimation for
+    optimization in high-dimensional Hilbert spaces"""
     
-    def __init__(self, params, lr=1e-3, momentum=0.9, 
-                 n_particles=10, exploration_rate=0.1,
-                 cognitive_coeff=1.5, social_coeff=1.5):
+    def __init__(self, params, lr=3e-4, betas=(0.9, 0.999), eps=1e-8,
+                 weight_decay=0.01, quantum_factor=0.1):
+        # Initialize optimizer parameters from equations.tex
         defaults = dict(
             lr=lr,
-            momentum=momentum,
-            n_particles=n_particles,
-            exploration_rate=exploration_rate,
-            cognitive_coeff=cognitive_coeff,
-            social_coeff=social_coeff,
-            positions=[],
-            velocities=[],
-            local_best_positions=[],
-            local_best_values=[],
-            global_best_position=None,
-            global_best_value=float('inf')
+            betas=betas,
+            eps=eps,
+            weight_decay=weight_decay,
+            quantum_factor=quantum_factor,
+            quantum_state={},
+            quantum_momentum={},
+            quantum_phase={},
+            quantum_energy={}
         )
         super().__init__(params, defaults)
 
