@@ -3,7 +3,7 @@ import torch.nn as nn
 import torch.nn.functional as F
 import numpy as np
 from typing import List, Tuple
-from quantum_circuit import QuantumProcessor
+from quantum_circuit import QuantumProcessor, QuantumCircuit
 
 class ProbabilisticLayer(nn.Module):
     """Neural network layer using probabilistic computations and Monte Carlo sampling.
@@ -391,7 +391,7 @@ class QuantumExpert(nn.Module):
     def __init__(self, input_dim: int, output_dim: int, n_qubits: int = 4):
         super().__init__()
         self.pre_quantum = nn.Linear(input_dim, 2**n_qubits)
-        self.quantum_layer = QuantumLayer(n_qubits=n_qubits, n_rotations=3)
+        self.quantum_layer = ProbabilisticLayer(n_qubits=n_qubits)
         self.post_quantum = nn.Linear(2**n_qubits, output_dim)
         
     def forward(self, x: torch.Tensor) -> torch.Tensor:
