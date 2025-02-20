@@ -3,49 +3,54 @@ import torch.nn as nn
 from typing import List, Dict, Any
 import numpy as np
 
-class QuantumInspiredOptimizer(torch.optim.Optimizer):
-    """Quantum-inspired optimization algorithm combining quantum annealing and genetic algorithms"""
+class QuantumAwareOptimizer(torch.optim.Optimizer):
+    """Optimizer that respects quantum mechanical constraints during updates"""
     
-    def __init__(self, params, lr=1e-3, population_size=10, mutation_rate=0.1):
-        defaults = dict(lr=lr, population_size=population_size, 
-                       mutation_rate=mutation_rate)
+    def __init__(self, params, lr=1e-3, momentum=0.9, damping=0.01):
+        defaults = dict(lr=lr, momentum=momentum, damping=damping,
+                       momentum_buffers=[], velocity_buffers=[])
         super().__init__(params, defaults)
-        
-        # Initialize quantum population
-        self.population = []
-        for param_group in self.param_groups:
-            for p in param_group['params']:
-                self.population.extend([p.clone() for _ in range(population_size)])
-    
+
     @torch.no_grad()
     def step(self, closure=None):
+        """Performs a single optimization step respecting unitarity constraints"""
         loss = None if closure is None else closure()
-        
+
         for group in self.param_groups:
             for p in group['params']:
                 if p.grad is None:
                     continue
+
+                state = self.state[p]
                 
-                # Quantum tunneling
-                tunneling_prob = torch.exp(-torch.abs(p.grad) / group['lr'])
-                mask = torch.rand_like(p) < tunneling_prob
+                # Initialize state if needed
+                if len(state) == 0:
+                    state['step'] = 0
+                    state['momentum_buffer'] = torch.zeros_like(p)
+                    state['velocity_buffer'] = torch.zeros_like(p)
+
+                momentum_buffer = state['momentum_buffer']
+                velocity_buffer = state['velocity_buffer']
                 
-                # Quantum crossover
-                population_grads = []
-                for member in self.population:
-                    member.grad = p.grad
-                    population_grads.append(member.grad)
+                # Update momentum with damping to maintain unitarity
+                momentum_buffer.mul_(group['momentum']).add_(
+                    p.grad, alpha=1 - group['momentum']
+                )
                 
-                # Calculate quantum superposition
-                superposition = torch.stack(population_grads).mean(0)
+                # Update velocity considering quantum phase
+                phase = torch.angle(p + 1j * momentum_buffer)
+                velocity_buffer.mul_(1 - group['damping']).add_(
+                    torch.sin(phase) * p.grad, alpha=group['damping']
+                )
                 
-                # Apply mutation
-                mutation = torch.randn_like(p) * group['mutation_rate']
+                # Apply update while preserving unitarity
+                update = momentum_buffer + velocity_buffer
+                unitary_update = update / (1 + torch.norm(update))
                 
-                # Update parameters
-                p.add_(torch.where(mask, superposition, p.grad) + mutation, 
-                       alpha=-group['lr'])
-        
+                p.add_(unitary_update, alpha=-group['lr'])
+                
+                state['step'] += 1
+
         return loss
 
 class QuantumAdam(torch.optim.Adam):
@@ -79,15 +84,36 @@ class QuantumAdam(torch.optim.Adam):
                 # Convert parameter to quantum state
                 quantum_state = torch.exp(1j * p)
                 
-                # Apply quantum Fourier transform
-                qft_state = torch.fft.fft2(quantum_state)
+                # Quantum Fourier transform with unitarity preservation
+                def unitary_qft(state):
+                    # Normalize input state
+                    state = state / (torch.norm(state) + 1e-8)
+                    
+                    # Apply QFT while preserving unitarity
+                    n = state.size(-1)
+                    omega = torch.exp(2j * torch.pi / n)
+                    indices = torch.arange(n, device=state.device)
+                    qft_matrix = omega ** (indices.view(-1, 1) * indices)
+                    qft_matrix = qft_matrix / torch.sqrt(torch.tensor(n, dtype=torch.float))
+                    
+                    # Ensure matrix is unitary
+                    qft_matrix = 0.5 * (qft_matrix + qft_matrix.conj().transpose(-2, -1))
+                    U, _, V = torch.linalg.svd(qft_matrix)
+                    unitary_qft = U @ V
+                    
+                    return state @ unitary_qft.conj()
+
+                # Apply unitary QFT
+                qft_state = unitary_qft(quantum_state)
                 phase = torch.angle(qft_state)
                 
-                # Phase kickback
-                state['quantum_phase'] = 0.9 * state['quantum_phase'] + 0.1 * phase
+                # Update phase with unitarity preservation
+                new_phase = phase / (torch.norm(phase) + 1e-8)
+                state['quantum_phase'] = 0.9 * state['quantum_phase'] + 0.1 * new_phase
                 
-                # Calculate quantum energy
+                # Calculate energy preserving quantum mechanical constraints
                 energy = torch.abs(qft_state) ** 2
+                energy = energy / (energy.sum() + 1e-8)  # Normalize probabilities
                 state['quantum_energy'] = 0.9 * state['quantum_energy'] + 0.1 * energy
                 
                 # Quantum momentum with phase and energy

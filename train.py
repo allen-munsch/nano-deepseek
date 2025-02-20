@@ -238,8 +238,8 @@ local_rank = int(os.environ.get('LOCAL_RANK', 0))
 
 @lru_cache
 def setup_training():
-    """Setup distributed training and device configuration"""
-    device = None  # Initialize device variable
+    """Setup distributed training and device configuration with proper synchronization"""
+    device = None
     
     # Initialize DDP variables with defaults
     ddp = world_rank != -1
@@ -249,11 +249,29 @@ def setup_training():
     if torch.cuda.is_available():
         device = torch.device(f"cuda:{local_rank}")
         if ddp:
+            # Set device before any other CUDA operations
             torch.cuda.set_device(device)
-            init_process_group(backend=backend, rank=world_rank, 
-                             world_size=world_size)
-            group = dist.new_group(list(range(world_size)), 
-                                 use_local_synchronization=True)
+            
+            # Initialize process group with timeout and proper synchronization
+            timeout = datetime.timedelta(minutes=30)
+            init_process_group(
+                backend=backend,
+                rank=world_rank,
+                world_size=world_size,
+                timeout=timeout
+            )
+            
+            # Ensure all processes are ready before creating new group
+            dist.barrier()
+            
+            # Create process group with proper synchronization
+            group = dist.new_group(
+                list(range(world_size)),
+                timeout=timeout
+            )
+            
+            # Wait for group creation to complete
+            dist.barrier(group)
     elif torch.backends.mps.is_available():
         device = torch.device("mps")
         if ddp:
@@ -884,30 +902,52 @@ def calculate_loss(logits, targets, aux_loss, quantum_states: List[torch.Tensor]
     return (main_loss + aux_loss + 0.1 * uncertainty + diversity_penalty + 0.01 * q_loss) / grad_accum
 
 def execute_training_step(model, optimizer, X, Y, scaler, iter_num):
-    """Execute core training logic for a single step"""
+    """Execute core training logic for a single step with proper gradient accumulation"""
     optimizer.zero_grad(set_to_none=True)
+    total_loss = 0
     
+    # Accumulate gradients over multiple forward passes
     for micro_step in range(grad_accum):
+        # Get a different batch slice for each micro step
+        batch_slice = slice(micro_step * X.size(0) // grad_accum,
+                          (micro_step + 1) * X.size(0) // grad_accum)
+        X_micro, Y_micro = X[batch_slice], Y[batch_slice]
+        
         if ddp:
-            model.require_backward_grad_sync = (micro_step == grad_accum - 1)
-        
-        with autocast(dtype=default_dtype):
-            logits, aux_loss = model(X, Y)
-            loss = calculate_loss(logits, Y, aux_loss)
+            # Only synchronize on last micro-step
+            with model.no_sync() if micro_step < grad_accum - 1 else nullcontext():
+                with autocast(dtype=default_dtype):
+                    logits, aux_loss = model(X_micro, Y_micro)
+                    loss = calculate_loss(logits, Y_micro, aux_loss)
+                    # Scale loss by grad_accum to maintain correct magnitude
+                    loss = loss / grad_accum
+                    
+                scaler.scale(loss).backward()
+        else:
+            with autocast(dtype=default_dtype):
+                logits, aux_loss = model(X_micro, Y_micro)
+                loss = calculate_loss(logits, Y_micro, aux_loss)
+                # Scale loss by grad_accum to maintain correct magnitude
+                loss = loss / grad_accum
+                
+            scaler.scale(loss).backward()
             
+        total_loss += loss.item() * grad_accum
+        
         if iter_num % log_interval == 0:
-            print(f"Micro-step {micro_step + 1}/{grad_accum}, Loss: {loss.item():.4f}")
-        
-        scaler.scale(loss).backward()
-        
+            print(f"Micro-step {micro_step + 1}/{grad_accum}, "
+                  f"Loss: {loss.item() * grad_accum:.4f}")
+    
+    # Clip gradients after accumulation
     if grad_clip != 0.0:
         scaler.unscale_(optimizer)
         torch.nn.utils.clip_grad_norm_(model.parameters(), grad_clip)
     
+    # Optimizer step
     scaler.step(optimizer)
     scaler.update()
     
-    return loss
+    return total_loss
 
 def train_model(model, optimizer, master_process):
     """Main training loop"""
