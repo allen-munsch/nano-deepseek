@@ -25,13 +25,29 @@ def load_encoder():
         meta = pickle.load(f)
     return tiktoken.get_encoding(meta['encoding_name'])
 
-def generate(model, start_text, max_tokens=100, temperature=0.8):
-    """Generate text starting from start_text"""
+def generate(model, start_text, max_tokens=100, temperature=0.8,
+            top_k=40, top_p=0.9, repetition_penalty=1.2,
+            max_context_length=2048):
+    """Generate text with advanced sampling and quality controls
+    
+    Args:
+        model: The language model
+        start_text: Initial prompt text
+        max_tokens: Maximum tokens to generate
+        temperature: Sampling temperature (higher = more random)
+        top_k: Number of highest probability tokens to consider
+        top_p: Cumulative probability threshold for nucleus sampling
+        repetition_penalty: Penalty for repeating tokens
+        max_context_length: Maximum context window size
+    """
     # Load tokenizer
     enc = load_encoder()
 
-    # Convert start text to tokens
-    context = torch.tensor(enc.encode_ordinary(start_text), dtype=torch.long).unsqueeze(0)
+    # Safely encode and truncate context if needed
+    tokens = enc.encode_ordinary(start_text)
+    if len(tokens) > max_context_length:
+        tokens = tokens[-max_context_length:]
+    context = torch.tensor(tokens, dtype=torch.long).unsqueeze(0)
 
     # Move model and context to device
     device = get_device()

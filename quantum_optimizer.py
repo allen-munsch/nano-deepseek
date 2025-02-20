@@ -3,26 +3,29 @@ import torch.nn as nn
 from typing import List, Dict, Any
 import numpy as np
 
-class QuantumInspiredOptimizer(torch.optim.Optimizer):
-    """Classical optimizer using quantum-inspired optimization techniques
+class ParticleSwarmOptimizer(torch.optim.Optimizer):
+    """Particle swarm optimization with quantum-inspired exploration
     
-    Note: This is NOT a true quantum optimizer. It uses classical approximations
-    of quantum concepts that may provide computational benefits, but cannot
-    achieve true quantum speedups or advantages."""
+    This is a classical optimization algorithm that uses concepts inspired by
+    quantum mechanics for better exploration of the parameter space. It does
+    NOT implement true quantum operations or provide quantum speedup."""
     
-    def __init__(self, params, lr=1e-3, momentum=0.9, damping=0.01, 
-                 n_particles=10, quantum_temp=0.1):
+    def __init__(self, params, lr=1e-3, momentum=0.9, 
+                 n_particles=10, exploration_rate=0.1,
+                 cognitive_coeff=1.5, social_coeff=1.5):
         defaults = dict(
-            lr=lr, 
+            lr=lr,
             momentum=momentum,
-            damping=damping,
             n_particles=n_particles,
-            quantum_temp=quantum_temp,
-            particle_positions=[],
-            particle_velocities=[],
-            particle_best_positions=[],
+            exploration_rate=exploration_rate,
+            cognitive_coeff=cognitive_coeff,
+            social_coeff=social_coeff,
+            positions=[],
+            velocities=[],
+            local_best_positions=[],
+            local_best_values=[],
             global_best_position=None,
-            quantum_phase=None
+            global_best_value=float('inf')
         )
         super().__init__(params, defaults)
 
@@ -68,19 +71,33 @@ class QuantumInspiredOptimizer(torch.optim.Optimizer):
 
         return loss
 
-class QuantumAdam(torch.optim.Adam):
-    """Adam optimizer with quantum-inspired updates"""
+class ExploratoryAdam(torch.optim.Adam):
+    """Adam optimizer with enhanced exploration capabilities
+    
+    This optimizer extends Adam with additional exploration mechanisms
+    inspired by quantum concepts, but implemented classically. It does
+    NOT provide quantum speedup or true quantum operations."""
     
     def __init__(self, params, lr=1e-3, betas=(0.9, 0.999), eps=1e-8,
-                 weight_decay=0, quantum_factor=0.1):
+                 weight_decay=0, exploration_factor=0.1, 
+                 noise_decay=0.999, min_noise=0.01):
         super().__init__(params, lr, betas, eps, weight_decay)
-        self.quantum_factor = quantum_factor
+        self.exploration_factor = exploration_factor
+        self.noise_decay = noise_decay
+        self.min_noise = min_noise
+        self.step_count = 0
     
     @torch.no_grad()
     def step(self, closure=None):
         loss = super().step(closure)
+        self.step_count += 1
         
-        # Apply quantum-inspired updates
+        # Calculate adaptive noise scale
+        noise_scale = max(
+            self.min_noise,
+            self.exploration_factor * (self.noise_decay ** self.step_count)
+        )
+        
         for group in self.param_groups:
             for p in group['params']:
                 if p.grad is None:
@@ -88,12 +105,11 @@ class QuantumAdam(torch.optim.Adam):
                     
                 state = self.state[p]
                 
-                # Initialize quantum state if needed
-                if 'quantum_state' not in state:
-                    state['quantum_state'] = torch.zeros_like(p, dtype=torch.cfloat)
-                    state['quantum_momentum'] = torch.zeros_like(p)
-                    state['quantum_phase'] = torch.zeros_like(p)
-                    state['quantum_energy'] = torch.zeros_like(p)
+                # Initialize exploration state if needed
+                if 'exploration_momentum' not in state:
+                    state['exploration_momentum'] = torch.zeros_like(p)
+                    state['best_position'] = p.clone()
+                    state['best_value'] = float('inf')
                 
                 # Quantum phase estimation using QPE algorithm
                 # Convert parameter to quantum state
