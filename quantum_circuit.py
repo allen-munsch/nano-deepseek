@@ -3,6 +3,8 @@ from qiskit.providers.aer import AerSimulator
 from qiskit.quantum_info import Operator, DensityMatrix
 from qiskit.providers.aer.noise import NoiseModel
 from qiskit.providers.fake_provider import FakeManila
+from qiskit.transpiler import CouplingMap
+from qiskit.transpiler.passes import SabreLayout, SabreSwap
 import numpy as np
 
 class QuantumProcessor:
@@ -71,6 +73,10 @@ class QuantumProcessor:
         )
         circuit.compose(state_prep, inplace=True)
         
+        # Get hardware constraints
+        coupling_map = CouplingMap(self.coupling_map)
+        basis_gates = self.basis_gates
+
         # Optimize circuit for hardware
         # Use SABRE for better qubit mapping
         layout_pass = SabreLayout(
