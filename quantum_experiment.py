@@ -38,14 +38,20 @@ def test_quantum_attention_speedup(n_qubits_range=None, shots=1000):
     for n_qubits in n_qubits_range:
         dim = 2**n_qubits
         
-        # Classical attention computation
+        # Classical attention computation with memory-efficient batching
         t0 = time.time()
+        batch_size = min(1024, dim)  # Cap batch size
         for _ in range(shots):
-            q = np.random.randn(dim, dim)
-            k = np.random.randn(dim, dim)
-            # Add temperature annealing per equations.tex
-            T = 1.0 / math.sqrt(_ + 1)
-            attn = np.matmul(q, k.T) / (np.sqrt(dim) * T)
+            total_attn = 0
+            # Process in batches
+            for i in range(0, dim, batch_size):
+                batch_end = min(i + batch_size, dim)
+                q = np.random.randn(batch_size, batch_end)
+                k = np.random.randn(batch_end, batch_size)
+                # Add temperature annealing per equations.tex
+                T = 1.0 / math.sqrt(_ + 1)
+                attn = np.matmul(q, k) / (np.sqrt(batch_end) * T)
+                total_attn += np.sum(attn)
         classical_time = time.time() - t0
         classical_times.append(classical_time)
         
