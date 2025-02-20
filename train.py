@@ -8,8 +8,8 @@ from contextlib import nullcontext
 import platform
 from typing import Dict, Any, List, Tuple
 
-from quantum_layer import QuantumLayer, QuantumExpert, quantum_loss
-from quantum_optimizer import QuantumInspiredOptimizer, QuantumAdam
+from probabilistic_layer import ProbabilisticLayer, StochasticExpert, uncertainty_loss
+from stochastic_optimizer import ParticleSwarmOptimizer, AdaptiveAdam
 
 import numpy as np
 import torch
@@ -417,12 +417,12 @@ class ModelWrapper(torch.nn.Module):
         self.token_embedding = torch.nn.Embedding(config['vocab_size'], config['n_embd'])
         self.position_embedding = torch.nn.Parameter(torch.zeros(1, config['block_size'], config['n_embd']))
         
-        # Quantum processing
-        self.quantum_attention = QuantumLayer(n_qubits=4, n_rotations=3)
+        # Probabilistic processing
+        self.stochastic_attention = ProbabilisticLayer(hidden_dim=config['n_embd'])
         
-        # Quantum experts
-        self.quantum_experts = torch.nn.ModuleList([
-            QuantumExpert(config['n_embd'], config['n_embd'])
+        # Stochastic experts
+        self.stochastic_experts = torch.nn.ModuleList([
+            StochasticExpert(config['n_embd'], config['n_embd'])
             for _ in range(num_experts)
         ])
         
