@@ -21,16 +21,30 @@ This document describes the mathematical formulation of a quantum-enhanced langu
 
 \section{Model Architecture}
 
-\subsection{Quantum Layer Operations with High-Dimensional Advantage}
-The quantum layer applies parallel rotation gates in high-dimensional spaces through quantum Fourier transform:
+\subsection{Quantum Circuit Operations}
+The quantum layer implements a true quantum circuit with the following operations:
+
+\subsubsection{State Preparation}
+Classical to quantum state conversion:
+\begin{equation}
+|\psi_{\text{in}}\rangle = \sum_{i=0}^{2^n-1} \alpha_i|i\rangle, \quad \sum_i |\alpha_i|^2 = 1
+\end{equation}
+
+\subsubsection{Quantum Gates}
+The circuit applies a sequence of quantum gates:
 \begin{align*}
-|\psi_{\text{out}}\rangle &= \mathcal{N}(\mathcal{E}(\mathcal{QFT}^{-1}\mathcal{R}(\theta)\mathcal{QFT}))|\psi_{\text{in}}\rangle \\
-\mathcal{R}(\theta) &= \bigoplus_{i=1}^{n/2} \begin{pmatrix} \cos(\theta_i/2) & -i\sin(\theta_i/2) \\ -i\sin(\theta_i/2) & \cos(\theta_i/2) \end{pmatrix} \\
-\mathcal{QFT}|\psi\rangle &= \frac{1}{\sqrt{N}}\sum_{k=0}^{N-1}\sum_{j=0}^{N-1}e^{2\pi i jk/N}|\psi_j\rangle \\
-\text{Speedup} &= O(n\log n) \text{ vs } O(n^2)
+H &= \frac{1}{\sqrt{2}}\begin{pmatrix} 1 & 1 \\ 1 & -1 \end{pmatrix} \text{ (Hadamard)} \\
+R_x(\theta) &= \begin{pmatrix} \cos(\theta/2) & -i\sin(\theta/2) \\ -i\sin(\theta/2) & \cos(\theta/2) \end{pmatrix} \text{ (X-rotation)} \\
+\text{CNOT} &= |0\rangle\langle0| \otimes I + |1\rangle\langle1| \otimes X \text{ (Entanglement)}
 \end{align*}
 
-where $\mathcal{QFT}$ is the quantum Fourier transform enabling parallel operations, $\mathcal{R}(\theta)$ represents block-diagonal rotation gates, $\mathcal{E}$ is the error correction operator, and $\mathcal{N}$ is the noise simulation. The theoretical speedup from $O(n^2)$ to $O(n\log n)$ comes from parallel processing in the frequency domain.
+\subsubsection{Quantum Evolution}
+The quantum state evolves through the circuit:
+\begin{equation}
+|\psi_{\text{out}}\rangle = U_M\cdots U_2U_1|\psi_{\text{in}}\rangle
+\end{equation}
+
+where $U_i$ are unitary quantum operations including single-qubit gates and two-qubit entangling gates.
 
 \subsection{Monte Carlo Attention}
 The Monte Carlo attention mechanism combines multiple sampling strategies:

@@ -29,50 +29,69 @@ class QuantumLayer(nn.Module):
         self.phase_damping = nn.Parameter(torch.tensor(0.005))
         
     def _apply_rotation(self, state: torch.Tensor, params: torch.Tensor, axis: str) -> torch.Tensor:
-        """Apply parallel rotation gates along specified axis with quantum advantage"""
-        # Reshape for parallel processing
+        """Apply quantum rotation gates using true quantum operations"""
         B, T, D = state.shape
-        state = state.view(B, T, self.n_qubits, -1)
         
-        # Prepare angles for parallel rotation
-        angles = params.unsqueeze(0).unsqueeze(0).expand(B, T, -1, -1)
+        # Convert classical state to quantum state representation
+        # |ψ⟩ = α|0⟩ + β|1⟩ for each qubit
+        quantum_state = self._classical_to_quantum(state)
         
-        # Apply quantum Fourier transform for parallel processing
-        state_freq = torch.fft.fft2(state, dim=(-2, -1))
-        
-        # Parallel rotation in frequency domain
-        if axis == 'x':
-            rot_matrix = self._get_parallel_rx_matrix(angles)
-        elif axis == 'y':
-            rot_matrix = self._get_parallel_ry_matrix(angles)
-        else:  # z axis
-            rot_matrix = self._get_parallel_rz_matrix(angles)
+        # Create quantum circuit for rotations
+        for qubit in range(self.n_qubits):
+            # Apply Hadamard to create superposition
+            quantum_state = self._apply_hadamard(quantum_state, qubit)
             
-        # Apply rotation in parallel
-        state_freq = torch.einsum('btqd,btqq->btqd', state_freq, rot_matrix)
+            # Apply controlled phase rotations
+            angle = params[qubit]
+            if axis == 'x':
+                quantum_state = self._apply_controlled_rx(quantum_state, qubit, angle)
+            elif axis == 'y':
+                quantum_state = self._apply_controlled_ry(quantum_state, qubit, angle)
+            else:  # z axis
+                quantum_state = self._apply_controlled_rz(quantum_state, qubit, angle)
+            
+            # Apply entangling gates between adjacent qubits
+            if qubit < self.n_qubits - 1:
+                quantum_state = self._apply_cnot(quantum_state, qubit, qubit + 1)
         
-        # Inverse quantum Fourier transform
-        state = torch.fft.ifft2(state_freq, dim=(-2, -1)).real
+        # Measure quantum state in computational basis
+        measured_state = self._quantum_measurement(quantum_state)
         
-        return state.view(B, T, D)
+        return measured_state.view(B, T, D)
     
-    def _get_parallel_rx_matrix(self, angles: torch.Tensor) -> torch.Tensor:
-        """Get parallel X rotation matrices for quantum advantage"""
-        cos = torch.cos(angles/2)
-        sin = torch.sin(angles/2)
+    def _classical_to_quantum(self, state: torch.Tensor) -> torch.Tensor:
+        """Convert classical state to quantum state representation"""
+        # Create quantum state vector in computational basis
+        quantum_state = torch.zeros(*state.shape[:-1], 2**self.n_qubits, 
+                                  dtype=torch.complex64, device=state.device)
         
-        # Construct block diagonal rotation matrices
-        rx = torch.zeros(*angles.shape[:-1], self.n_qubits, self.n_qubits, 
-                        dtype=torch.complex64, device=angles.device)
+        # Initialize to |0⟩ state
+        quantum_state[..., 0] = 1.0
         
-        # Populate with 2x2 rotation blocks
-        idx = torch.arange(0, self.n_qubits-1, 2)
-        rx[..., idx, idx] = cos[..., :len(idx)]
-        rx[..., idx, idx+1] = -1j*sin[..., :len(idx)]
-        rx[..., idx+1, idx] = -1j*sin[..., :len(idx)]
-        rx[..., idx+1, idx+1] = cos[..., :len(idx)]
+        # Apply amplitude encoding
+        norms = torch.norm(state, dim=-1, keepdim=True)
+        normalized_state = state / (norms + 1e-8)
+        angles = torch.acos(normalized_state)
         
-        return rx
+        # Convert to quantum amplitudes
+        quantum_state[..., :state.shape[-1]] = torch.exp(1j * angles)
+        
+        # Normalize quantum state
+        quantum_state = quantum_state / torch.sqrt(torch.sum(torch.abs(quantum_state)**2, dim=-1, keepdim=True))
+        
+        return quantum_state
+
+    def _apply_hadamard(self, state: torch.Tensor, qubit: int) -> torch.Tensor:
+        """Apply Hadamard gate to create quantum superposition"""
+        H = torch.tensor([[1, 1], [1, -1]], dtype=torch.complex64, device=state.device) / np.sqrt(2)
+        return self._apply_single_qubit_gate(state, qubit, H)
+        
+    def _apply_controlled_rx(self, state: torch.Tensor, control: int, angle: float) -> torch.Tensor:
+        """Apply controlled-RX rotation"""
+        cos = torch.cos(angle/2)
+        sin = torch.sin(angle/2)
+        rx = torch.tensor([[cos, -1j*sin], [-1j*sin, cos]], dtype=torch.complex64, device=state.device)
+        return self._apply_controlled_gate(state, control, control+1, rx)
         
     def _ry_gate(self, state: torch.Tensor, qubit: int, angle: float) -> torch.Tensor:
         """Rotation around Y axis"""
