@@ -26,6 +26,9 @@ from torch.distributed.fsdp import FullyShardedDataParallel as FSDP
 from torch.distributed.fsdp.wrap import transformer_auto_wrap_policy
 from torch.nn import functional as F
 from fairscale.nn.moe import MOELayer, Top2Gate
+from fairscale.nn import MoE
+from torch.distributed.fsdp import FullyShardedDataParallel as FSDP
+from torch.distributed.fsdp.wrap import wrap
 
 # Model configuration
 def get_default_config():

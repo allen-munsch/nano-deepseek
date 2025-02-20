@@ -23,9 +23,18 @@ Improvements Needed:
 1. State Management:
 ```python
 # Current problematic implementation
-def _prepare_probabilistic_state(self, state):
-    normalized_state = state / torch.norm(state)
-    # ... problematic quantum operations ...
+def _prepare_probabilistic_state(self, state: torch.Tensor) -> torch.Tensor:
+    # Add numerical stability
+    norm = torch.norm(state, dim=-1, keepdim=True) 
+    normalized_state = state / (norm + 1e-8)
+        
+    # Verify quantum constraints
+    if not torch.allclose(torch.sum(torch.abs(normalized_state)**2), 
+                        torch.ones(1, device=state.device),
+                        atol=1e-6):
+        raise ValueError("State normalization failed")
+            
+    return normalized_state
 
 # Should be:
 def _prepare_probabilistic_state(self, state):
@@ -43,10 +52,18 @@ def _prepare_probabilistic_state(self, state):
 2. Error Correction:
 ```python
 # Current incomplete implementation
-def _surface_code_encode(self, state, d):
-    # Missing crucial steps
+def _surface_code_encode(self, state: torch.Tensor, d: int) -> torch.Tensor:
+    """Full Surface code implementation with syndrome extraction"""
     encoded = self._encode_logical_qubit(state)
-    return encoded
+    syndromes = self._measure_stabilizers(encoded)
+    error_chains = self._minimum_weight_matching(syndromes)
+    corrected = self._apply_corrections(encoded, error_chains)
+        
+    # Verify encoding success
+    if not self._verify_encoding(corrected):
+        raise ValueError("Surface code encoding verification failed")
+            
+    return corrected
 
 # Should include full syndrome extraction:
 def _surface_code_encode(self, state, d):
@@ -61,9 +78,28 @@ def _surface_code_encode(self, state, d):
 ```python
 # Current problematic quantum optimizer
 class QuantumAdam(torch.optim.Optimizer):
-    def step(self):
-        # Incorrect quantum operations on classical params
-        quantum_state = torch.exp(1j * p)
+    def step(self, closure=None):
+        """Properly separated classical and quantum optimization"""
+        loss = None if closure is None else closure()
+        
+        for group in self.param_groups:
+            for p in group['params']:
+                if p.grad is None:
+                    continue
+                    
+                # Classical Adam updates
+                classical_update = self._compute_classical_update(p, group)
+                
+                # Quantum-inspired exploration
+                quantum_update = self._quantum_inspired_exploration(p)
+                
+                # Combine updates while preserving constraints
+                combined_update = self._merge_updates(classical_update, quantum_update)
+                
+                # Apply update with unitarity preservation
+                p.add_(combined_update)
+                
+        return loss
         
 # Should separate classical and quantum parts:
 class QuantumAdam(torch.optim.Optimizer):
@@ -81,10 +117,20 @@ class QuantumAdam(torch.optim.Optimizer):
 4. Monte Carlo Sampling:
 ```python
 # Current implementation lacks proper uncertainty handling
-def monte_carlo_attention(self, q, k, v, num_samples=8):
-    # Missing uncertainty propagation
+def monte_carlo_attention(self, q: torch.Tensor, k: torch.Tensor, 
+                         v: torch.Tensor, num_samples: int = 8) -> Tuple[torch.Tensor, torch.Tensor]:
+    """Monte Carlo attention with proper uncertainty estimation"""
     samples = [self._sample_attention(q, k, v) for _ in range(num_samples)]
-    return torch.mean(torch.stack(samples), dim=0)
+    stacked_samples = torch.stack(samples)
+    
+    # Calculate mean and uncertainty
+    mean = torch.mean(stacked_samples, dim=0)
+    std = torch.std(stacked_samples, dim=0)
+    
+    # Add uncertainty information to output
+    output = mean + std * torch.randn_like(mean) * self.uncertainty_scale
+    
+    return output, std
 
 # Should include proper uncertainty estimation:
 def monte_carlo_attention(self, q, k, v, num_samples=8):
