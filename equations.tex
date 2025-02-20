@@ -45,20 +45,74 @@ We propose a novel quantum-enhanced Monte Carlo sampling method that combines th
 \begin{equation}
 \mathbb{E}[f] \approx \frac{1}{N_s} \sum_{i=1}^{N_s} f(x_i) |\langle \psi_i|U(\theta)|\psi_{\text{ref}}\rangle|^2
 \end{equation}
+
+The quantum circuit $U(\theta)$ is parameterized as:
+\begin{equation}
+U(\theta) = \prod_{l=1}^L \left(\prod_{i=1}^n R_i(\theta_i^l) \prod_{j=1}^{n-1} \text{CNOT}_{j,j+1}\right)
+\end{equation}
+
+where $R_i(\theta)$ represents single-qubit rotations:
+\begin{equation}
+R_i(\theta) = R_z(\theta_z)R_y(\theta_y)R_x(\theta_x)
+\end{equation}
+
+The reference state $|\psi_{\text{ref}}\rangle$ is prepared as:
+\begin{equation}
+|\psi_{\text{ref}}\rangle = \frac{1}{\sqrt{N}} \sum_{i=1}^N |i\rangle
+\end{equation}
 where $N_s$ is the number of samples and $U(\theta)$ is a parameterized quantum circuit.
 
 \subsection{Quantum Sampling Efficiency}
-The quantum sampling achieves improved convergence:
+The quantum sampling achieves improved convergence through quantum parallelism:
 \begin{equation}
 \epsilon_{\text{QMC}} = O\left(\frac{1}{\sqrt{N_s N_q}}\right)
+\end{equation}
+
+The quantum advantage arises from:
+\begin{itemize}
+\item Quantum superposition allowing parallel evaluation
+\item Entanglement-enhanced correlations between samples
+\item Quantum interference effects in amplitude estimation
+\end{itemize}
+
+Error bounds are given by:
+\begin{equation}
+|\mathbb{E}[f] - \mathbb{E}_{\text{QMC}}[f]| \leq \frac{C}{\sqrt{N_s N_q}} + \epsilon_{\text{device}}
+\end{equation}
+
+where $\epsilon_{\text{device}}$ represents hardware-specific errors:
+\begin{equation}
+\epsilon_{\text{device}} = \sqrt{\epsilon_{\text{gate}}^2 + \epsilon_{\text{readout}}^2 + \epsilon_{\text{decoherence}}^2}
 \end{equation}
 where $N_q$ is the number of quantum measurements per sample.
 
 \subsection{Hybrid Sampling Strategy}
-We combine classical and quantum sampling:
+We combine classical and quantum sampling through an adaptive weighting scheme:
 \begin{equation}
 p(x) = \alpha p_{\text{quantum}}(x) + (1-\alpha)p_{\text{classical}}(x)
 \end{equation}
+
+The quantum probability distribution is given by:
+\begin{equation}
+p_{\text{quantum}}(x) = |\langle x|U(\theta)|\psi_{\text{init}}\rangle|^2
+\end{equation}
+
+The classical distribution uses importance sampling:
+\begin{equation}
+p_{\text{classical}}(x) = \frac{q(x)h(x)}{\sum_x q(x)h(x)}
+\end{equation}
+
+where $h(x)$ is the heuristic importance function:
+\begin{equation}
+h(x) = \exp\left(-\beta \frac{|f(x) - \mu|}{\sigma}\right)
+\end{equation}
+
+The mixing coefficient $\alpha$ adapts based on empirical performance:
+\begin{equation}
+\alpha = \frac{\text{Var}[p_{\text{classical}}]}{\text{Var}[p_{\text{classical}}] + \gamma \text{Var}[p_{\text{quantum}}]}
+\end{equation}
+
+with hyperparameter $\gamma$ controlling the quantum-classical trade-off.
 with adaptive weighting:
 \begin{equation}
 \alpha = \frac{\sigma_{\text{classical}}^2}{\sigma_{\text{classical}}^2 + \sigma_{\text{quantum}}^2}
