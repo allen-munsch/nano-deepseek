@@ -3,6 +3,7 @@ import torch.nn as nn
 import torch.nn.functional as F
 import numpy as np
 from typing import List, Tuple
+from quantum_circuit import QuantumProcessor
 
 class QuantumLayer(nn.Module):
     """Neural network layer that interfaces with real quantum circuits via Qiskit.
