@@ -4,119 +4,134 @@
 \usepackage{physics}
 \usepackage{bm}
 
-\title{Mathematical Formulation of Quantum-Enhanced Training}
+\title{Mathematical Formulation of DeepSeek with Quantum Enhancement}
 \author{DeepSeek Implementation}
 \date{\today}
 
 \begin{document}
 \maketitle
 
+\section*{Introduction}
+This document describes the mathematical formulation of a quantum-enhanced language model implementation. The codebase combines classical transformer architecture with quantum computing concepts, including quantum layers for processing, quantum-inspired optimization, and Monte Carlo methods for uncertainty estimation. Key components include quantum state evolution through rotation gates, error correction mechanisms, and quantum-enhanced attention mechanisms. The implementation focuses on maintaining quantum coherence while providing practical benefits for language modeling tasks.
+
 \section{Model Architecture}
 
-\subsection{Quantum State Evolution}
-The quantum state evolution through the network is given by:
+\subsection{Quantum Layer Operations}
+The quantum layer applies a series of rotation gates and error correction:
 \begin{equation}
-|\psi_{\text{out}}\rangle = \prod_{l=1}^L \mathcal{U}_l(\bm{\theta}_l)|\psi_{\text{in}}\rangle
+|\psi_{\text{out}}\rangle = \mathcal{E}(\mathcal{R}_z(\theta_z)\mathcal{R}_y(\theta_y)\mathcal{R}_x(\theta_x))|\psi_{\text{in}}\rangle
 \end{equation}
 
-where $\mathcal{U}_l$ represents the unitary operations at layer $l$ with parameters $\bm{\theta}_l$.
+where $\mathcal{R}_i$ represents rotation gates and $\mathcal{E}$ is the error correction operator.
 
-\subsection{Attention Mechanism}
-The quantum-enhanced attention mechanism is defined as:
+\subsection{Monte Carlo Attention}
+The Monte Carlo attention mechanism with temperature scaling and Gumbel noise:
 \begin{equation}
-\text{Attention}(Q,K,V) = \frac{1}{N_{\text{MC}}}\sum_{i=1}^{N_{\text{MC}}} \text{softmax}\left(\frac{QK^T}{\sqrt{d_k}} + \mathcal{G}_i\right)V
+\text{Attention}(Q,K,V) = \frac{1}{N_{\text{MC}}}\sum_{i=1}^{N_{\text{MC}}} \text{softmax}\left(\frac{QK^T}{\sqrt{d}} + \mathcal{G}_i\tau\right)V
 \end{equation}
 
-with Gumbel noise $\mathcal{G}_i$ and Monte Carlo samples $N_{\text{MC}}$.
+where $\tau=0.6$ is the temperature parameter and $\mathcal{G}_i$ is Gumbel noise.
 
 \subsection{Rotary Embeddings}
-Position-dependent rotation matrices:
+Position-dependent rotation matrices applied to queries and keys:
 \begin{equation}
-R(\theta)_{m,\text{pos}} = \begin{pmatrix}
-\cos(m\theta_{\text{pos}}) & -\sin(m\theta_{\text{pos}}) \\
-\sin(m\theta_{\text{pos}}) & \cos(m\theta_{\text{pos}})
-\end{pmatrix}
+\begin{split}
+q_{\text{rot}} &= q \odot \text{PE}(L,d) \\
+k_{\text{rot}} &= k \odot \text{PE}(L,d)
+\end{split}
 \end{equation}
 
-where $\theta_{\text{pos}} = 10000^{-2m/d}$.
+where $\text{PE}$ is the positional encoding with base=10000.
 
 \section{Loss Functions}
 
-\subsection{Main Loss Components}
-The total loss function combines multiple components:
+\subsection{Combined Loss}
+The total loss combines cross entropy, uncertainty, and quantum coherence:
 \begin{equation}
-\mathcal{L}_{\text{total}} = \frac{1}{N_{\text{accum}}}\left(\mathcal{L}_{\text{main}} + \mathcal{L}_{\text{aux}} + \alpha\mathcal{U} + \beta\mathcal{D} + \gamma\mathcal{L}_{\text{quantum}}\right)
+\mathcal{L}_{\text{total}} = \frac{1}{\text{grad\_accum}}\left(\mathcal{L}_{\text{CE}} + 0.1\mathcal{U} + \mathcal{D} + 0.01\mathcal{L}_{\text{quantum}}\right)
 \end{equation}
 
 where:
 \begin{align*}
-\mathcal{L}_{\text{main}} &= -\sum_{i} y_i \log(\hat{y}_i) \\
-\mathcal{L}_{\text{aux}} &= \text{MoE auxiliary loss} \\
-\mathcal{U} &= \text{Uncertainty term} \\
-\mathcal{D} &= \text{Diversity penalty} \\
-\mathcal{L}_{\text{quantum}} &= \text{Quantum coherence loss}
+\mathcal{L}_{\text{CE}} &= -\sum_{i} y_i \log(\hat{y}_i) \\
+\mathcal{U} &= \text{std}(\{\mathcal{L}_i\}_{i=1}^{N_{\text{MC}}}) \\
+\mathcal{D} &= -0.1 \cdot \text{std}(\{\hat{y}_i\}_{i=1}^{N_{\text{MC}}}) \\
+\mathcal{L}_{\text{quantum}} &= -\text{Tr}(\rho\log\rho)
 \end{align*}
 
-\subsection{Quantum Loss}
-The quantum coherence loss is computed as:
+\subsection{Quantum Coherence}
+The von Neumann entropy for quantum coherence:
 \begin{equation}
-\mathcal{L}_{\text{quantum}} = -\sum_i \lambda_i \log(\lambda_i)
+S(\rho) = -\sum_i \lambda_i \log(\lambda_i + \epsilon)
 \end{equation}
 
-where $\lambda_i$ are eigenvalues of the quantum density matrix.
+where $\lambda_i$ are eigenvalues of the density matrix $\rho$ and $\epsilon=10^{-10}$.
 
 \section{Optimization}
 
-\subsection{Quantum-Enhanced Adam}
-The quantum-enhanced Adam optimizer updates:
+\subsection{Quantum Adam}
+The quantum-enhanced Adam optimizer with quantum momentum:
 \begin{align*}
 m_t &= \beta_1 m_{t-1} + (1-\beta_1)g_t \\
 v_t &= \beta_2 v_{t-1} + (1-\beta_2)g_t^2 \\
-\hat{m}_t &= \frac{m_t}{1-\beta_1^t} \\
-\hat{v}_t &= \frac{v_t}{1-\beta_2^t} \\
-\phi_t &= \angle(e^{i\theta_t}) \\
-q_t &= q_{\text{factor}}\sin(\phi_t)m_{\text{quantum}} \\
-\theta_t &= \theta_{t-1} - \alpha\frac{\hat{m}_t}{\sqrt{\hat{v}_t} + \epsilon} + q_t
+\phi_t &= \angle(e^{i\pi p_t}) \\
+q_t &= q_{\text{factor}} \sin(\phi_t) m_{\text{quantum}} \\
+p_{t+1} &= p_t - \alpha\frac{m_t}{\sqrt{v_t} + \epsilon} + q_t
 \end{align*}
 
+where $q_{\text{factor}}=0.1$ controls quantum effects.
+
 \subsection{Learning Rate Schedule}
-The learning rate follows a warmup and decay schedule:
+Cosine decay with linear warmup:
 \begin{equation}
 \eta_t = \begin{cases}
 \eta_{\text{max}}\frac{t}{t_{\text{warmup}}} & \text{if } t < t_{\text{warmup}} \\
-\eta_{\text{min}} & \text{if } t > t_{\text{max}} \\
-\eta_{\text{min}} + \frac{1}{2}(\eta_{\text{max}}-\eta_{\text{min}})(1 + \cos(\pi\frac{t-t_{\text{warmup}}}{t_{\text{max}}-t_{\text{warmup}}})) & \text{otherwise}
+\eta_{\text{min}} + \frac{\eta_{\text{max}}-\eta_{\text{min}}}{2}(1 + \cos(\pi\frac{t-t_{\text{warmup}}}{t_{\text{max}}-t_{\text{warmup}}})) & \text{otherwise}
 \end{cases}
 \end{equation}
 
-\section{Quantum Error Correction}
+where $\eta_{\text{min}}=3\times10^{-5}$ and $\eta_{\text{max}}=3\times10^{-4}$.
 
-\subsection{Error Syndrome}
-The error syndrome measurement:
+\section{Error Correction and Noise}
+
+\subsection{Error Correction}
+The error correction process:
+\begin{align*}
+|\psi_{\text{encoded}}\rangle &= \mathcal{C}|\psi_{\text{in}}\rangle \\
+\text{syndrome} &= \mathcal{M}|\psi_{\text{encoded}}\rangle \\
+|\psi_{\text{corrected}}\rangle &= \begin{cases}
+|\psi_{\text{encoded}}\rangle_{\text{flip}} & \text{if syndrome} > 0 \\
+|\psi_{\text{encoded}}\rangle & \text{otherwise}
+\end{cases}
+\end{align*}
+
+where $\mathcal{C}$ is the encoding matrix and $\mathcal{M}$ is the syndrome measurement.
+
+\subsection{Noise Model}
+The quantum noise simulation:
 \begin{equation}
-S = \text{Tr}(M|\psi_{\text{encoded}}\rangle\langle\psi_{\text{encoded}}|)
+|\psi_{\text{noisy}}\rangle = \frac{(1 + \mathcal{N}_{\text{amp}})\exp(i\mathcal{N}_{\text{phase}})|\psi\rangle}{\|(1 + \mathcal{N}_{\text{amp}})\exp(i\mathcal{N}_{\text{phase}})|\psi\rangle\|}
 \end{equation}
 
-\subsection{State Correction}
-The corrected quantum state:
+where $\mathcal{N}_{\text{amp}} \sim \mathcal{N}(0,0.01)$ and $\mathcal{N}_{\text{phase}} \sim \mathcal{N}(0,0.005)$.
+
+\section{Monte Carlo Methods}
+
+\subsection{Sampling Strategy}
+Multiple sampling approaches combined:
 \begin{equation}
-|\psi_{\text{corrected}}\rangle = \mathcal{R}(S)|\psi_{\text{encoded}}\rangle
+\text{logits}_{\text{combined}} = (\text{logits}_{\text{gumbel}} + \text{logits}_{\text{temp}}) \odot \text{mask}_{\text{top-k}}
 \end{equation}
 
-where $\mathcal{R}(S)$ is the recovery operation based on syndrome $S$.
+where $\text{mask}_{\text{top-k}}$ selects top 40 logits.
 
-\section{Monte Carlo Uncertainty}
+\subsection{Uncertainty Estimation}
+Mean and uncertainty from MC samples:
+\begin{align*}
+\bar{y} &= \frac{1}{N_{\text{MC}}}\sum_{i=1}^{N_{\text{MC}}} \hat{y}_i \\
+\sigma^2 &= \frac{1}{N_{\text{MC}}}\sum_{i=1}^{N_{\text{MC}}}(\hat{y}_i - \bar{y})^2
+\end{align*}
 
-\subsection{Prediction Uncertainty}
-The uncertainty in predictions:
-\begin{equation}
-\sigma^2 = \frac{1}{N_{\text{MC}}-1}\sum_{i=1}^{N_{\text{MC}}}(\hat{y}_i - \bar{y})^2
-\end{equation}
-
-\subsection{Diversity Penalty}
-The diversity penalty term:
-\begin{equation}
-\mathcal{D} = -\beta\text{std}(\{\hat{y}_i\}_{i=1}^{N_{\text{MC}}})
-\end{equation}
+with $N_{\text{MC}}=8$ samples for evaluation.
 
 \end{document}
