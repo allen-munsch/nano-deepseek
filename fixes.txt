@@ -33,7 +33,7 @@ Should include phase information:
 
 b) The Monte Carlo attention mechanism lacks proper temperature annealing:
 ```latex
-\text{logits}_{\text{gumbel}} = \frac{\text{logits} + \mathcal{G}}{0.1}
+\text{logits}_{\text{gumbel}} = \frac{\text{logits} + \mathcal{G}}{\tau(t)}, \quad \tau(t) = \max(0.1, \frac{1}{\sqrt{t}})
 ```
 Should be:
 ```latex

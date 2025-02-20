@@ -486,11 +486,18 @@ class ModelWrapper(torch.nn.Module):
         out = torch.matmul(attn_weights, v)
         return out
 
-    def monte_carlo_attention(self, q, k, v, num_samples=64, num_mc_samples=8):  # Increased samples for better estimation
-        # q, k, v shape: (batch, seq_len, dim)
+    def monte_carlo_attention(self, q, k, v, num_samples=64, num_mc_samples=8):
+        """Monte Carlo attention with adaptive temperature and noise"""
         B, L, D = q.shape
-        # Apply rotary embeddings to q and k
         q, k = apply_rotary_emb(q, k, L, D)
+        
+        # Adaptive temperature annealing
+        if not hasattr(self, 'forward_count'):
+            self.forward_count = 0
+        self.forward_count += 1
+        
+        temp = max(0.1, 1.0 / math.sqrt(self.forward_count))  # Decay temperature
+        noise_scale = max(0.05, 0.1 / math.sqrt(self.forward_count))  # Decay noise
         print(f"\nMonte Carlo Attention:")
         print(f"- Batch size: {B}")
         print(f"- Sequence length: {L}")

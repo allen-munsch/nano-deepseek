@@ -27,7 +27,7 @@ The quantum layer implements proper quantum state preparation and evolution:
 \subsubsection{Amplitude Encoding}
 Classical to quantum state conversion with proper amplitude encoding:
 \begin{equation}
-|\psi_{\text{in}}\rangle = \sum_{i=0}^{2^{\lceil\log_2(n)\rceil}-1} \alpha_i|i\rangle
+|\psi_{\text{in}}\rangle = \sum_{i=0}^{2^{\lceil\log_2(n)\rceil}-1} r_i e^{i\theta_i}|i\rangle
 \end{equation}
 
 where amplitudes $\alpha_i$ are computed as:

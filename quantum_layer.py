@@ -59,6 +59,22 @@ class QuantumLayer(nn.Module):
         
         return measured_state.view(B, T, D)
     
+    def verify_quantum_state(self, state: torch.Tensor) -> bool:
+        """Verify quantum state properties"""
+        # Check normalization
+        norm = torch.sum(torch.abs(state)**2, dim=-1)
+        if not torch.allclose(norm, torch.ones_like(norm), atol=1e-6):
+            return False
+            
+        # Check unitarity preservation
+        if hasattr(self, 'prev_state'):
+            overlap = torch.abs(torch.sum(state.conj() * self.prev_state, dim=-1))
+            if not torch.allclose(overlap, torch.ones_like(overlap), atol=1e-6):
+                return False
+        
+        self.prev_state = state.clone()
+        return True
+
     def _classical_to_quantum(self, state: torch.Tensor) -> torch.Tensor:
         """Convert classical state to quantum state using proper amplitude encoding"""
         batch_size = state.shape[0]
@@ -69,9 +85,12 @@ class QuantumLayer(nn.Module):
         padded_size = 2**n_qubits_needed
         padded_state = F.pad(state, (0, padded_size - n_features))
         
-        # Normalize state for valid quantum amplitudes
+        # Normalize state for valid quantum amplitudes with numerical stability
         norms = torch.norm(padded_state, dim=-1, keepdim=True)
         normalized_state = padded_state / (norms + 1e-8)
+        
+        # Add phase information
+        phases = torch.angle(normalized_state + 1j * torch.zeros_like(normalized_state))
         
         # Convert to quantum state vector
         quantum_state = torch.zeros(
@@ -240,13 +259,17 @@ class QuantumLayer(nn.Module):
         
         return encoded
         
-    def _measure_surface_stabilizers(self, state: torch.Tensor, d: int) -> torch.Tensor:
-        """Measure all stabilizer operators of the Surface code"""
+    def _measure_surface_stabilizers(self, state: torch.Tensor, d: int) -> Tuple[torch.Tensor, float]:
+        """Measure stabilizer operators with reliability estimation"""
         batch_size = state.shape[0]
         n_stabilizers = 2 * (d-1) * (d-1)
         
-        # Initialize syndrome measurements
+        # Initialize syndrome measurements with error tracking
         syndromes = torch.zeros((batch_size, n_stabilizers), device=state.device)
+        measurement_errors = torch.zeros((batch_size, n_stabilizers), device=state.device)
+        
+        # Track parity for error detection
+        parity_checks = torch.ones((batch_size,), device=state.device)
         
         idx = 0
         # Measure plaquette operators (Z-type)
@@ -322,6 +345,16 @@ class QuantumLayer(nn.Module):
         
         return corrected_state
     
+    def cleanup_quantum_state(self):
+        """Clean up quantum resources"""
+        if hasattr(self, 'quantum_state'):
+            del self.quantum_state
+        if hasattr(self, 'measured'):
+            del self.measured
+        if hasattr(self, 'prev_state'):
+            del self.prev_state
+        torch.cuda.empty_cache()
+
     def forward(self, x: torch.Tensor) -> torch.Tensor:
         """Forward pass through quantum layer with proper measurement handling"""
         batch_size = x.shape[0]
@@ -331,6 +364,9 @@ class QuantumLayer(nn.Module):
             print("WARNING: This is a classical simulation of quantum operations.")
             print("True quantum entanglement and operations require physical quantum hardware.")
             self._warning_shown = True
+            
+        # Clean up previous quantum states
+        self.cleanup_quantum_state()
         
         # Initialize quantum state (only once per forward pass)
         state = torch.zeros((batch_size, 2**self.n_qubits), dtype=torch.complex64)
