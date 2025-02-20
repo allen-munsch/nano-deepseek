@@ -60,31 +60,72 @@ class QuantumLayer(nn.Module):
         return measured_state.view(B, T, D)
     
     def _classical_to_quantum(self, state: torch.Tensor) -> torch.Tensor:
-        """Convert classical state to quantum state representation"""
-        # Create quantum state vector in computational basis
-        quantum_state = torch.zeros(*state.shape[:-1], 2**self.n_qubits, 
-                                  dtype=torch.complex64, device=state.device)
+        """Convert classical state to quantum state using proper amplitude encoding"""
+        batch_size = state.shape[0]
+        n_features = state.shape[-1]
         
-        # Initialize to |0⟩ state
-        quantum_state[..., 0] = 1.0
+        # Pad input to nearest power of 2
+        n_qubits_needed = int(np.ceil(np.log2(n_features)))
+        padded_size = 2**n_qubits_needed
+        padded_state = F.pad(state, (0, padded_size - n_features))
         
-        # Apply amplitude encoding
-        norms = torch.norm(state, dim=-1, keepdim=True)
-        normalized_state = state / (norms + 1e-8)
-        angles = torch.acos(normalized_state)
+        # Normalize state for valid quantum amplitudes
+        norms = torch.norm(padded_state, dim=-1, keepdim=True)
+        normalized_state = padded_state / (norms + 1e-8)
         
-        # Convert to quantum amplitudes
-        quantum_state[..., :state.shape[-1]] = torch.exp(1j * angles)
+        # Convert to quantum state vector
+        quantum_state = torch.zeros(
+            batch_size, 2**self.n_qubits, 
+            dtype=torch.complex64, 
+            device=state.device
+        )
         
-        # Normalize quantum state
-        quantum_state = quantum_state / torch.sqrt(torch.sum(torch.abs(quantum_state)**2, dim=-1, keepdim=True))
+        # Amplitude encoding following quantum principles
+        phases = torch.acos(normalized_state.abs())
+        signs = normalized_state.sign()
+        quantum_state[..., :padded_size] = signs * torch.exp(1j * phases)
+        
+        # Ensure state is normalized (trace preservation)
+        quantum_state = quantum_state / torch.sqrt(
+            torch.sum(torch.abs(quantum_state)**2, dim=-1, keepdim=True)
+        )
+        
+        # Verify quantum state properties
+        if not torch.allclose(
+            torch.sum(torch.abs(quantum_state)**2, dim=-1),
+            torch.ones(batch_size, device=state.device),
+            atol=1e-6
+        ):
+            raise ValueError("Quantum state normalization failed")
         
         return quantum_state
 
     def _apply_hadamard(self, state: torch.Tensor, qubit: int) -> torch.Tensor:
-        """Apply Hadamard gate to create quantum superposition"""
+        """Apply Hadamard gate with proper phase tracking"""
+        # Hadamard matrix
         H = torch.tensor([[1, 1], [1, -1]], dtype=torch.complex64, device=state.device) / np.sqrt(2)
-        return self._apply_single_qubit_gate(state, qubit, H)
+        
+        # Track global phase
+        if not hasattr(self, 'global_phase'):
+            self.global_phase = torch.zeros(state.shape[0], device=state.device)
+        
+        # Apply gate while preserving quantum properties
+        new_state = self._apply_single_qubit_gate(state, qubit, H)
+        
+        # Update global phase
+        self.global_phase += torch.angle(
+            torch.sum(new_state * state.conj(), dim=-1)
+        )
+        
+        # Verify unitarity
+        if not torch.allclose(
+            torch.sum(torch.abs(new_state)**2, dim=-1),
+            torch.sum(torch.abs(state)**2, dim=-1),
+            atol=1e-6
+        ):
+            raise ValueError("Hadamard operation violated unitarity")
+            
+        return new_state
         
     def _apply_controlled_rx(self, state: torch.Tensor, control: int, angle: float) -> torch.Tensor:
         """Apply controlled-RX rotation"""

@@ -4,11 +4,22 @@ from typing import List, Dict, Any
 import numpy as np
 
 class QuantumAwareOptimizer(torch.optim.Optimizer):
-    """Optimizer that respects quantum mechanical constraints during updates"""
+    """Optimizer implementing quantum-inspired optimization with proper constraints"""
     
-    def __init__(self, params, lr=1e-3, momentum=0.9, damping=0.01):
-        defaults = dict(lr=lr, momentum=momentum, damping=damping,
-                       momentum_buffers=[], velocity_buffers=[])
+    def __init__(self, params, lr=1e-3, momentum=0.9, damping=0.01, 
+                 n_particles=10, quantum_temp=0.1):
+        defaults = dict(
+            lr=lr, 
+            momentum=momentum,
+            damping=damping,
+            n_particles=n_particles,
+            quantum_temp=quantum_temp,
+            particle_positions=[],
+            particle_velocities=[],
+            particle_best_positions=[],
+            global_best_position=None,
+            quantum_phase=None
+        )
         super().__init__(params, defaults)
 
     @torch.no_grad()
