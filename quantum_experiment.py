@@ -20,18 +20,21 @@ from qiskit.quantum_info import Statevector, DensityMatrix, Operator
 import numpy as np
 
 def test_quantum_attention_speedup(n_qubits_range=[2,3,4,5,6], shots=1000):
-    """Test the theoretical quantum attention speedup"""
+    """Test quantum attention speedup according to equations.tex section 5.1"""
     classical_times = []
     quantum_times = []
     
     for n_qubits in n_qubits_range:
-        # Classical attention computation
         dim = 2**n_qubits
+        
+        # Classical attention computation
         t0 = time.time()
         for _ in range(shots):
             q = np.random.randn(dim, dim)
             k = np.random.randn(dim, dim)
-            attn = np.matmul(q, k.T) / np.sqrt(dim)
+            # Add temperature annealing per equations.tex
+            T = 1.0 / math.sqrt(_ + 1)
+            attn = np.matmul(q, k.T) / (np.sqrt(dim) * T)
         classical_time = time.time() - t0
         classical_times.append(classical_time)
         
@@ -152,7 +155,7 @@ def test_error_correction(physical_error_rates=[0.001, 0.01, 0.05, 0.1],
     return logical_error_rates
 
 def test_quantum_sampling(n_qubits_range=[2,3,4,5], n_samples_range=[10,50,100,500]):
-    """Test quantum Monte Carlo sampling efficiency"""
+    """Test quantum Monte Carlo sampling efficiency per equations.tex section 5.3"""
     classical_errors = []
     quantum_errors = []
     
@@ -160,12 +163,17 @@ def test_quantum_sampling(n_qubits_range=[2,3,4,5], n_samples_range=[10,50,100,5
         c_errors = []
         q_errors = []
         
-        # True state to estimate
+        # Create true state to estimate
         qr = QuantumRegister(n_qubits)
         qc = QuantumCircuit(qr)
+        
+        # Add rotations per equations.tex
         for i in range(n_qubits):
-            qc.rx(np.random.random(), i)
-            qc.ry(np.random.random(), i)
+            theta = np.random.random()
+            phi = np.random.random()
+            qc.rx(theta, i)
+            qc.ry(phi, i)
+            qc.rz(-theta*phi, i)  # Phase correction
         
         # Get true state as a Statevector
         backend = AerSimulator()
@@ -233,7 +241,7 @@ def test_quantum_sampling(n_qubits_range=[2,3,4,5], n_samples_range=[10,50,100,5
     return classical_errors, quantum_errors
 
 def main():
-    """Run all experiments"""
+    """Run all experiments and validate against equations.tex predictions"""
     print("Testing quantum attention speedup...")
     c_times, q_times = test_quantum_attention_speedup()
     print("\nAttention speedup results:")
