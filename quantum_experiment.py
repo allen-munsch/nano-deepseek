@@ -11,7 +11,6 @@ This experiment validates key theoretical predictions from equations.tex:
 import numpy as np
 from qiskit import QuantumCircuit, QuantumRegister, ClassicalRegister, transpile
 from qiskit_aer import AerSimulator
-import qiskit.excute as execute
 from qiskit.providers.aer import QasmSimulator
 from qiskit.quantum_info import state_fidelity, Operator
 from qiskit.providers.aer.noise import NoiseModel
@@ -49,7 +48,7 @@ def test_quantum_attention_speedup(n_qubits_range=[2,3,4,5,6], shots=1000):
             qc.measure(qr, cr)
             
         backend = AerSimulator()
-        job = execute(qc, backend, shots=1)
+        job = backend.run(qc, shots=1)
         quantum_time = time.time() - t0
         quantum_times.append(quantum_time)
     
@@ -105,8 +104,8 @@ def test_error_correction(physical_error_rates=[0.001, 0.01, 0.05, 0.1],
             qc.measure(qr, cr)
             
             # Execute with noise
-            backend = QasmSimulator()
-            job = execute(qc, backend, noise_model=noise_model, shots=shots)
+            backend = AerSimulator()
+            job = backend.run(qc, noise_model=noise_model, shots=shots)
             results = job.result().get_counts()
             
             # Calculate logical error rate
@@ -168,7 +167,7 @@ def test_quantum_sampling(n_qubits_range=[2,3,4,5], n_samples_range=[10,50,100,5
             meas_qc.measure(qr, cr)
             
             backend = AerSimulator()
-            job = execute(meas_qc, backend, shots=n_samples)
+            job = backend.run(meas_qc, shots=n_samples)
             counts = job.result().get_counts()
             
             # Reconstruct state from measurements
