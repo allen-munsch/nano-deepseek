@@ -278,7 +278,7 @@ class QuantumProcessor:
         # Build calibration matrix
         meas_fitter = CompleteMeasFitter(
             cal_results,
-            state_labels,
+            single_labels,  # Use labels from single qubit calibration
             circlabel='measurement_calibration'
         )
         
