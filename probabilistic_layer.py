@@ -23,6 +23,13 @@ class Network_DQNN(nn.Module):
         self.qnn_arch = qnn_arch
         self.num_qubits = qnn_arch[0]
         
+        # Initialize quantum-classical interface
+        self.quantum_interface = QuantumClassicalInterface(
+            n_qubits=self.num_qubits,
+            batch_size=32,
+            error_mitigation=True
+        )
+        
         # Calculate number of parameters per equations.tex
         self.num_params = sum([qnn_arch[l]*qnn_arch[l+1]*3 + (qnn_arch[l])*3 
                              for l in range(len(qnn_arch)-1)]) + qnn_arch[-1]*3
@@ -85,7 +92,7 @@ class Network_DQNN(nn.Module):
         return True
 
     def _prepare_probabilistic_state(self, state: torch.Tensor) -> torch.Tensor:
-        """Convert input to probabilistic representation with uncertainty tracking"""
+        """Convert input to quantum state representation using interface"""
         batch_size = state.shape[0]
         n_features = state.shape[-1]
         
@@ -94,9 +101,8 @@ class Network_DQNN(nn.Module):
         padded_size = 2**n_qubits_needed
         padded_state = F.pad(state, (0, padded_size - n_features))
         
-        # Normalize state for valid quantum amplitudes with numerical stability
-        norms = torch.norm(padded_state, dim=-1, keepdim=True)
-        normalized_state = padded_state / (norms + 1e-8)
+        # Convert to quantum state through interface
+        quantum_state = self.quantum_interface.classical_to_quantum(padded_state)
         
         # Add phase information
         phases = torch.angle(normalized_state + 1j * torch.zeros_like(normalized_state))
