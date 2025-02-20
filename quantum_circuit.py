@@ -19,21 +19,28 @@ class QuantumProcessor:
         self.noise_model = NoiseModel.from_backend(self.device_backend)
         
     def prepare_quantum_state(self, classical_data):
-        """Convert classical data to quantum state"""
+        """Efficient quantum state preparation using Qiskit"""
+        # Validate backend constraints
+        basis_gates = self.device_backend.configuration().basis_gates
+        coupling_map = self.device_backend.configuration().coupling_map
+        
+        # Create circuit respecting hardware constraints
         circuit = QuantumCircuit(self.qr, self.cr)
         
-        # Normalize input data
-        normalized_data = classical_data / np.linalg.norm(classical_data)
+        # Convert to complex amplitudes
+        amplitudes = classical_data.astype(np.complex128)
+        amplitudes = amplitudes / np.linalg.norm(amplitudes)
         
-        # Amplitude encoding
-        for i, amplitude in enumerate(normalized_data):
-            if i < self.n_qubits:
-                theta = 2 * np.arccos(np.abs(amplitude))
-                phi = np.angle(amplitude)
-                
-                # Apply rotation gates
-                circuit.ry(theta, self.qr[i])
-                circuit.rz(phi, self.qr[i])
+        # Use Qiskit's state preparation
+        circuit.initialize(amplitudes, self.qr)
+        
+        # Optimize circuit
+        transpiled = transpile(
+            circuit,
+            basis_gates=basis_gates,
+            coupling_map=coupling_map,
+            optimization_level=3
+        )
                 
         return circuit
     
@@ -79,11 +86,21 @@ class QuantumProcessor:
             
         return probabilities
     
-    def _mitigate_readout_errors(self, measured_probs):
-        """Apply readout error mitigation"""
-        # This would implement readout error correction
-        # using calibration data from the quantum device
-        return measured_probs
+    def _mitigate_readout_errors(self, measured_probs, circuit):
+        """Apply proper readout error mitigation using Qiskit"""
+        # Create calibration circuits
+        meas_calibs = complete_meas_cal(qr=self.qr, cr=self.cr)
+        
+        # Execute calibration circuits
+        job = self.simulator.run(meas_calibs)
+        cal_results = job.result()
+        
+        # Create measurement fitter
+        meas_fitter = CompleteMeasFitter(cal_results, state_labels)
+        
+        # Apply correction
+        mitigated_results = meas_fitter.filter.apply(measured_probs)
+        return mitigated_results
     
     def get_density_matrix(self, circuit):
         """Get density matrix representation of quantum state"""

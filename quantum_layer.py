@@ -202,41 +202,18 @@ class QuantumLayer(nn.Module):
             
         return state_copy.reshape(-1, 2**self.n_qubits)
     
-    def _apply_error_correction(self, state: torch.Tensor) -> torch.Tensor:
-        """Apply Surface code quantum error correction"""
-        batch_size = state.shape[0]
+    def _apply_error_mitigation(self, circuit: QuantumCircuit) -> QuantumCircuit:
+        """Apply practical error mitigation techniques for NISQ devices"""
+        # Use measurement error mitigation
+        meas_fitter = self.quantum_processor._get_measurement_fitter()
         
-        # Surface code parameters
-        d = 3  # Distance of the Surface code
-        n_physical = d * d  # Number of physical qubits
-        n_stabilizers = 2 * (d-1) * (d-1)  # Number of stabilizer measurements
+        # Add measurements
+        circuit.measure(self.quantum_processor.qr, self.quantum_processor.cr)
         
-        # Encode logical qubit into Surface code
-        encoded_state = self._surface_code_encode(state, d)
+        # Get mitigated circuit
+        mitigated = meas_fitter.filter.apply(circuit)
         
-        # Apply noise channel
-        noisy_state = self._apply_noise(encoded_state)
-        
-        # Measure stabilizer operators (plaquette and vertex operators)
-        syndromes = self._measure_surface_stabilizers(noisy_state, d)
-        
-        # Minimum weight perfect matching for error correction
-        correction_ops = self._minimum_weight_matching(syndromes, d)
-        
-        # Apply correction operations
-        corrected_state = torch.zeros_like(noisy_state)
-        for b in range(batch_size):
-            # Apply correction chain
-            corrected_state[b] = self._apply_correction_chain(
-                noisy_state[b], 
-                correction_ops[b],
-                d
-            )
-        
-        # Decode back to logical qubit
-        decoded_state = self._surface_code_decode(corrected_state, d)
-        
-        return decoded_state
+        return mitigated
         
     def _surface_code_encode(self, state: torch.Tensor, d: int) -> torch.Tensor:
         """Encode logical qubit into d x d Surface code lattice"""
