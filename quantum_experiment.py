@@ -20,7 +20,17 @@ import matplotlib.pyplot as plt
 from qiskit.quantum_info import Statevector, DensityMatrix, Operator
 import numpy as np
 
-def test_quantum_attention_speedup(n_qubits_range=[2,3,4,5,6], shots=1000):
+def test_quantum_attention_speedup(n_qubits_range=None, shots=1000):
+    """Test quantum attention speedup according to equations.tex section 5.1
+    
+    Tests architectures from 1 to 1M qubits using logarithmic sampling to
+    keep runtime manageable while covering the full range."""
+    
+    if n_qubits_range is None:
+        # Generate logarithmically spaced points from 1 to 1M qubits
+        n_qubits_range = np.logspace(0, 6, num=20, dtype=int)
+        n_qubits_range = np.unique(n_qubits_range)  # Remove duplicates
+        print(f"Testing qubit range: {n_qubits_range}")
     """Test quantum attention speedup according to equations.tex section 5.1"""
     classical_times = []
     quantum_times = []
@@ -83,8 +93,19 @@ def test_quantum_attention_speedup(n_qubits_range=[2,3,4,5,6], shots=1000):
     
     return classical_times, quantum_times
 
-def test_error_correction(physical_error_rates=[0.001, 0.01, 0.05, 0.1],
-                         code_distances=[3,5,7], shots=1000):
+def test_error_correction(physical_error_rates=None, code_distances=None, shots=1000):
+    """Test surface code error correction per equations.tex section 5.2
+    
+    Tests large-scale error correction with code distances up to 100,
+    covering architectures up to 10k physical qubits."""
+    
+    if physical_error_rates is None:
+        # Test error rates from 10^-6 to 10^-1
+        physical_error_rates = np.logspace(-6, -1, num=6)
+        
+    if code_distances is None:
+        # Test code distances up to 100 (10k physical qubits)
+        code_distances = [3, 5, 7, 11, 15, 21, 31, 51, 75, 100]
     """Test surface code error correction per equations.tex section 5.2"""
     from qiskit.circuit.library import IGate, XGate, YGate, ZGate
     logical_error_rates = []
@@ -178,7 +199,20 @@ def test_error_correction(physical_error_rates=[0.001, 0.01, 0.05, 0.1],
     
     return logical_error_rates
 
-def test_quantum_sampling(n_qubits_range=[2,3,4,5], n_samples_range=[10,50,100,500]):
+def test_quantum_sampling(n_qubits_range=None, n_samples_range=None):
+    """Test quantum Monte Carlo sampling efficiency per equations.tex section 5.3
+    
+    Tests sampling efficiency across architectures from 1 to 1M qubits."""
+    
+    if n_qubits_range is None:
+        # Logarithmically spaced points from 1 to 1M qubits
+        n_qubits_range = np.logspace(0, 6, num=20, dtype=int)
+        n_qubits_range = np.unique(n_qubits_range)
+        
+    if n_samples_range is None:
+        # Logarithmically spaced sample counts
+        n_samples_range = np.logspace(1, 5, num=10, dtype=int)
+        n_samples_range = np.unique(n_samples_range)
     """Test quantum Monte Carlo sampling efficiency per equations.tex section 5.3"""
     classical_errors = []
     quantum_errors = []
@@ -266,22 +300,38 @@ def test_quantum_sampling(n_qubits_range=[2,3,4,5], n_samples_range=[10,50,100,5
 
 def main():
     """Run all experiments and validate against equations.tex predictions"""
-    print("Testing quantum attention speedup...")
+    print("\n=== Large-Scale Quantum Architecture Tests ===")
+    
+    print("\nTesting quantum attention speedup...")
+    print("Testing architectures from 1 to 1M qubits...")
     c_times, q_times = test_quantum_attention_speedup()
     print("\nAttention speedup results:")
-    print(f"Classical times: {c_times}")
-    print(f"Quantum times: {q_times}")
+    print("Number of qubits | Classical (s) | Quantum (s) | Speedup")
+    print("-" * 55)
+    for i, n_qubits in enumerate(n_qubits_range):
+        speedup = c_times[i]/q_times[i]
+        print(f"{n_qubits:13d} | {c_times[i]:11.3f} | {q_times[i]:9.3f} | {speedup:7.1f}x")
     
     print("\nTesting error correction...")
+    print("Testing code distances up to 100 (10k physical qubits)...")
     error_rates = test_error_correction()
     print("\nError correction results:")
-    print(f"Logical error rates: {error_rates}")
+    print("Code distance | Physical error | Logical error")
+    print("-" * 45)
+    for i, d in enumerate(code_distances):
+        for j, p in enumerate(physical_error_rates):
+            print(f"{d:12d} | {p:13.1e} | {error_rates[i][j]:.1e}")
     
     print("\nTesting quantum sampling efficiency...")
+    print("Testing sampling across 1 to 1M qubit architectures...")
     c_errors, q_errors = test_quantum_sampling()
     print("\nSampling efficiency results:")
-    print(f"Classical errors: {c_errors}")
-    print(f"Quantum errors: {q_errors}")
+    print("Number of qubits | Samples | Classical err | Quantum err | Improvement")
+    print("-" * 70)
+    for i, n_qubits in enumerate(n_qubits_range):
+        for j, n_samples in enumerate(n_samples_range):
+            improvement = c_errors[i][j]/q_errors[i][j]
+            print(f"{n_qubits:13d} | {n_samples:7d} | {c_errors[i][j]:.1e} | {q_errors[i][j]:.1e} | {improvement:10.1f}x")
 
 if __name__ == "__main__":
     main()
