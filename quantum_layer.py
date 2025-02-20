@@ -94,38 +94,44 @@ class QuantumLayer(nn.Module):
         return state_copy.reshape(-1, 2**self.n_qubits)
     
     def _apply_error_correction(self, state: torch.Tensor) -> torch.Tensor:
-        """Apply quantum error correction"""
-        # Encode quantum state
+        """Apply quantum error correction following equations.tex formalism"""
+        # Encode state: |ψ_encoded⟩ = C|ψ_in⟩
         encoded_state = torch.einsum('ijk,bj->bik', self.error_correction_code, state)
         
-        # Simulate error detection
+        # Measure syndrome: syndrome = M|ψ_encoded⟩
         syndrome = torch.einsum('ij,bjk->bik', self.syndrome_measurement, encoded_state)
         
-        # Error correction based on syndrome
-        correction = torch.where(syndrome > 0, 
-                               encoded_state.flip(-1),
-                               encoded_state)
+        # Apply correction based on syndrome measurement:
+        # |ψ_corrected⟩ = |ψ_encoded⟩_flip if syndrome > 0
+        #                = |ψ_encoded⟩ otherwise
+        corrected_state = torch.where(
+            syndrome > 0,
+            encoded_state.flip(-1),  # Bit flip correction
+            encoded_state  # No correction needed
+        )
         
-        return correction
+        return corrected_state
 
     def _apply_noise(self, state: torch.Tensor) -> torch.Tensor:
-        """Simulate realistic quantum noise effects"""
-        # Amplitude damping
-        noise = torch.randn_like(state) * self.decoherence_rate
+        """Simulate realistic quantum noise effects per equations.tex noise model"""
+        # Amplitude damping noise N(0, 0.01)
+        amp_noise = torch.normal(0, 0.01, state.shape, device=state.device)
         
-        # Phase damping
-        phase_noise = torch.exp(1j * torch.randn_like(state) * self.phase_damping)
+        # Phase damping noise N(0, 0.005) 
+        phase_noise = torch.normal(0, 0.005, state.shape, device=state.device)
         
-        # Apply noise
-        state = state + noise
-        state = state * phase_noise
+        # Apply noise model from equations.tex:
+        # |ψ_noisy⟩ = ((1 + N_amp)exp(iN_phase)|ψ⟩) / ||(1 + N_amp)exp(iN_phase)|ψ⟩||
+        noisy_state = (1 + amp_noise) * torch.exp(1j * phase_noise) * state
         
-        # Error correction
-        state = self._apply_error_correction(state)
+        # Normalize
+        norm = torch.norm(noisy_state, dim=-1, keepdim=True)
+        noisy_state = noisy_state / (norm + 1e-8)
         
-        # Renormalize
-        state = state / torch.norm(state, dim=-1, keepdim=True)
-        return state
+        # Apply error correction
+        corrected_state = self._apply_error_correction(noisy_state)
+        
+        return corrected_state
     
     def forward(self, x: torch.Tensor) -> torch.Tensor:
         """Forward pass through quantum layer with proper measurement handling"""
@@ -191,19 +197,24 @@ class QuantumExpert(nn.Module):
         x = self.quantum_layer(x)
         return self.post_quantum(x)
 
-def quantum_loss(predictions: torch.Tensor, targets: torch.Tensor, quantum_states: List[torch.Tensor]) -> torch.Tensor:
-    """Loss function incorporating quantum coherence"""
+def quantum_loss(predictions: torch.Tensor, targets: torch.Tensor, quantum_states: List[torch.Tensor], epsilon: float = 1e-10) -> torch.Tensor:
+    """Loss function incorporating quantum coherence via von Neumann entropy"""
     # Standard cross entropy
     ce_loss = nn.functional.cross_entropy(predictions, targets)
     
-    # Quantum coherence regularization
+    # Quantum coherence via von Neumann entropy S(ρ) = -Tr(ρlogρ)
     coherence_loss = 0
     for state in quantum_states:
-        # Calculate von Neumann entropy
-        eigenvals = torch.linalg.eigvals(state @ state.conj().transpose(-2, -1))
-        entropy = -torch.sum(eigenvals * torch.log(eigenvals + 1e-10))
+        # Calculate density matrix ρ = |ψ⟩⟨ψ|
+        density_matrix = state @ state.conj().transpose(-2, -1)
+        
+        # Get eigenvalues λᵢ of density matrix
+        eigenvals = torch.linalg.eigvals(density_matrix).real
+        
+        # Calculate von Neumann entropy: S(ρ) = -∑ᵢλᵢlog(λᵢ + ε)
+        entropy = -torch.sum(eigenvals * torch.log(eigenvals + epsilon))
         coherence_loss += entropy
         
-    # Combine losses
+    # Combine losses with weighting from equations.tex
     total_loss = ce_loss + 0.1 * coherence_loss
     return total_loss
