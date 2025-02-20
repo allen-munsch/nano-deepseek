@@ -46,17 +46,28 @@ def test_quantum_attention_speedup(n_qubits_range=[2,3,4,5,6], shots=1000):
         
         t0 = time.time()
         for _ in range(shots):
-            # Prepare quantum states
+            # Add rotary embeddings per equations.tex
             qc.h(range(n_qubits))
-            # Apply controlled operations
+            for i in range(n_qubits):
+                theta = 2 * np.pi * i / (10000 ** (2*i/dim))
+                qc.rz(theta, i)
+            
+            # Apply controlled operations with phase tracking
             for i in range(n_qubits-1):
                 qc.cx(i, i+1)
+                # Add phase evolution
+                qc.rz(-0.1/_,i)  # Dephasing term
             qc.measure(qr, cr)
             
         backend = AerSimulator()
         job = backend.run(qc, shots=1)
         quantum_time = time.time() - t0
         quantum_times.append(quantum_time)
+        
+        # Verify theoretical speedup ratio
+        speedup = classical_time/quantum_time
+        theoretical = np.sqrt(dim/n_qubits)
+        print(f"n_qubits: {n_qubits}, Measured speedup: {speedup:.2f}x, Theoretical: {theoretical:.2f}x")
     
     # Plot results
     plt.figure(figsize=(10,6))
@@ -72,22 +83,34 @@ def test_quantum_attention_speedup(n_qubits_range=[2,3,4,5,6], shots=1000):
     
     return classical_times, quantum_times
 
-def test_error_correction(physical_error_rates=[0.001, 0.01, 0.05, 0.1], 
-                        code_distances=[3,5,7], shots=1000):
-    """Test surface code error correction effectiveness"""
+def test_error_correction(physical_error_rates=[0.001, 0.01, 0.05, 0.1],
+                         code_distances=[3,5,7], shots=1000):
+    """Test surface code error correction per equations.tex section 5.2"""
     from qiskit.circuit.library import IGate, XGate, YGate, ZGate
     logical_error_rates = []
     
     for d in code_distances:
         d_rates = []
         for p in physical_error_rates:
-            # Create noise model
+            # Create noise model with proper error channels
             noise_model = NoiseModel()
             
-            # Define error probabilities
-            p_x = p/3
-            p_y = p/3
-            p_z = p/3
+            # Define error probabilities per equations.tex
+            p_x = p/3  # Bit flip
+            p_y = p/3  # Y error  
+            p_z = p/3  # Phase flip
+            p_i = 1 - p  # No error
+            
+            # Create quantum error using proper gates
+            error_ops = [
+                (IGate(), p_i),  # No error
+                (XGate(), p_x),  # Bit flip
+                (YGate(), p_y),  # Y error
+                (ZGate(), p_z)   # Phase flip
+            ]
+            
+            # Add the error to the noise model
+            noise_model.add_all_qubit_quantum_error(error_ops, ['x', 'y', 'z'])
             p_i = 1 - p  # probability of no error
             
             # Create quantum error using Qiskit gates
