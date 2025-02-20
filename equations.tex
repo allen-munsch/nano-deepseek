@@ -21,13 +21,23 @@ This document describes the mathematical formulation of a quantum-enhanced langu
 
 \section{Model Architecture}
 
-\subsection{Quantum Circuit Operations}
-The quantum layer implements a true quantum circuit with the following operations:
+\subsection{Quantum State Preparation and Evolution}
+The quantum layer implements proper quantum state preparation and evolution:
 
-\subsubsection{State Preparation}
-Classical to quantum state conversion:
+\subsubsection{Amplitude Encoding}
+Classical to quantum state conversion with proper amplitude encoding:
 \begin{equation}
-|\psi_{\text{in}}\rangle = \sum_{i=0}^{2^n-1} \alpha_i|i\rangle, \quad \sum_i |\alpha_i|^2 = 1
+|\psi_{\text{in}}\rangle = \sum_{i=0}^{2^{\lceil\log_2(n)\rceil}-1} \alpha_i|i\rangle
+\end{equation}
+
+where amplitudes $\alpha_i$ are computed as:
+\begin{equation}
+\alpha_i = \text{sign}(x_i)\frac{|x_i|}{\|\mathbf{x}\|_2}e^{i\phi_i}, \quad \phi_i = \arccos(|x_i|/\|\mathbf{x}\|_2)
+\end{equation}
+
+ensuring proper normalization:
+\begin{equation}
+\sum_i |\alpha_i|^2 = 1
 \end{equation}
 
 \subsubsection{Quantum Gates}
