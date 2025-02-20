@@ -5,7 +5,9 @@ import math
 import pickle
 from contextlib import nullcontext
 import platform
-from typing import Dict, Any
+from typing import Dict, Any, List, Tuple
+
+from quantum_layer import QuantumLayer, QuantumExpert, quantum_loss
 
 import numpy as np
 import torch
@@ -394,6 +396,15 @@ class ModelWrapper(torch.nn.Module):
         # Embeddings
         self.token_embedding = torch.nn.Embedding(config['vocab_size'], config['n_embd'])
         self.position_embedding = torch.nn.Parameter(torch.zeros(1, config['block_size'], config['n_embd']))
+        
+        # Quantum processing
+        self.quantum_attention = QuantumLayer(n_qubits=4, n_rotations=3)
+        
+        # Quantum experts
+        self.quantum_experts = torch.nn.ModuleList([
+            QuantumExpert(config['n_embd'], config['n_embd'])
+            for _ in range(num_experts)
+        ])
         
         # MoE layers
         self.moe_layers = torch.nn.ModuleList([
@@ -794,11 +805,14 @@ def train_iteration(model, optimizer, train_loader, scaler, iter_num, best_val_l
         
     return best_val_loss
 
-def calculate_loss(logits, targets, aux_loss):
-    """Calculate loss with Monte Carlo sampling"""
+def calculate_loss(logits, targets, aux_loss, quantum_states: List[torch.Tensor]):
+    """Calculate loss with Monte Carlo sampling and quantum coherence"""
     num_mc_samples = 10
     mc_losses = []
     mc_predictions = []
+    
+    # Track quantum states for coherence calculation
+    quantum_coherence_states = []
     
     for _ in range(num_mc_samples):
         # Multiple sampling strategies
@@ -854,8 +868,11 @@ def calculate_loss(logits, targets, aux_loss):
     pred_std = mc_predictions.std(dim=0)
     diversity_penalty = -0.1 * pred_std.mean()  # Encourage diverse predictions
     
-    # Combine all loss components
-    return (main_loss + aux_loss + 0.1 * uncertainty + diversity_penalty) / grad_accum
+    # Calculate quantum loss
+    q_loss = quantum_loss(pred_mean, targets, quantum_coherence_states)
+    
+    # Combine all loss components including quantum loss
+    return (main_loss + aux_loss + 0.1 * uncertainty + diversity_penalty + 0.01 * q_loss) / grad_accum
 
 def execute_training_step(model, optimizer, X, Y, scaler, iter_num):
     """Execute core training logic for a single step"""
