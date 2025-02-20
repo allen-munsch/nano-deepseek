@@ -410,19 +410,24 @@ def apply_rotary_emb(q, k, seq_len, dim, base=10000.0):
     return q_rot, k_rot
 
 
-class ModelWrapper(torch.nn.Module):
+class QNNModelWrapper(torch.nn.Module):
     def __init__(self, config, group=None):
         super().__init__()
+        # QNN architecture
+        self.qnn_arch = [config['n_embd'], config['n_embd'], config['n_embd']]
+        
         # Embeddings
         self.token_embedding = torch.nn.Embedding(config['vocab_size'], config['n_embd'])
         self.position_embedding = torch.nn.Parameter(torch.zeros(1, config['block_size'], config['n_embd']))
         
-        # Probabilistic processing
-        self.stochastic_attention = ProbabilisticLayer(hidden_dim=config['n_embd'])
+        # Quantum processing
+        self.quantum_layer = QuantumProbabilisticLayer(n_qubits=int(np.log2(config['n_embd'])), 
+                                                     qnn_arch=self.qnn_arch)
         
-        # Stochastic experts
-        self.stochastic_experts = torch.nn.ModuleList([
-            StochasticExpert(config['n_embd'], config['n_embd'])
+        # Quantum experts
+        self.quantum_experts = torch.nn.ModuleList([
+            QuantumProcessor(n_qubits=int(np.log2(config['n_embd'])), 
+                           qnn_arch=self.qnn_arch)
             for _ in range(num_experts)
         ])
         

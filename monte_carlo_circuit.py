@@ -10,12 +10,15 @@ import numpy as np
 class QuantumProcessor:
     """Quantum processor using real quantum circuits via Qiskit"""
     
-    def __init__(self, n_qubits: int):
+    def __init__(self, n_qubits: int, qnn_arch: Optional[List[int]] = None):
         # Validate against hardware constraints
         self.device_backend = FakeManila()
         max_qubits = self.device_backend.configuration().n_qubits
         if n_qubits > max_qubits:
             raise ValueError(f"Requested {n_qubits} qubits exceeds device maximum of {max_qubits}")
+            
+        # Store QNN architecture if provided
+        self.qnn_arch = qnn_arch
             
         self.n_qubits = n_qubits
         self.qr = QuantumRegister(n_qubits)

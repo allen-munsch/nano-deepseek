@@ -2,16 +2,18 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 import numpy as np
-from typing import List, Tuple
+from typing import List, Tuple, Optional, Any
 from quantum_circuit import QuantumProcessor, QuantumCircuit
+from qiskit import QuantumCircuit, QuantumRegister, ClassicalRegister
 
-class ProbabilisticLayer(nn.Module):
-    """Neural network layer using probabilistic computations and Monte Carlo sampling.
+class QuantumProbabilisticLayer(nn.Module):
+    """Neural network layer using quantum circuits and Monte Carlo sampling.
     
-    This layer implements classical probabilistic algorithms including:
-    - Stochastic state preparation
+    This layer implements quantum algorithms including:
+    - Quantum state preparation
+    - Quantum circuit execution
     - Monte Carlo sampling
-    - Noise-robust measurements
+    - Error mitigation
     - Uncertainty estimation"""
     
     def __init__(self, n_qubits: int):

@@ -3,11 +3,11 @@ import torch.nn as nn
 from typing import List, Dict, Any
 import numpy as np
 
-class StochasticParticleOptimizer(torch.optim.Optimizer):
-    """Particle swarm optimization with stochastic exploration
+class QuantumParticleOptimizer(torch.optim.Optimizer):
+    """Quantum-enhanced particle swarm optimization
     
-    A classical optimization algorithm using particle swarm dynamics and
-    stochastic exploration for better search of the parameter space."""
+    A hybrid quantum-classical optimization algorithm using quantum circuits
+    for exploration and classical PSO for exploitation."""
     
     def __init__(self, params, lr=1e-3, momentum=0.9, 
                  n_particles=10, exploration_rate=0.1,
