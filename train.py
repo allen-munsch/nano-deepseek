@@ -437,21 +437,27 @@ class DeepSeekQNN(torch.nn.Module):
             for _ in range(num_experts)
         ])
         
-        # MoE layers
+        # Enhanced MoE layers with capacity factor and load balancing
+        expert_capacity_factor = 2.0  # From DeepSeek paper
         self.moe_layers = torch.nn.ModuleList([
-            MOELayer(
-                gate=Top2Gate(
-                    model_dim=config['n_embd'],
-                    num_experts=num_experts,
-                ),
-                experts=torch.nn.ModuleList([
-                    torch.nn.Sequential(
-                        torch.nn.Linear(config['n_embd'], 4 * config['n_embd']),
-                        torch.nn.GELU(),
-                        torch.nn.Linear(4 * config['n_embd'], config['n_embd'])
-                    ) for _ in range(num_experts)
-                ]),
+            MoE(
+                input_size=config['n_embd'],
+                num_experts=num_experts,
+                hidden_size=4 * config['n_embd'],
+                activation=torch.nn.GELU(),
+                capacity_factor=expert_capacity_factor,
+                drop_tokens=True,  # Enable token dropping
+                use_expert_choice=True,  # Enable expert choice routing
+                expert_capacity=int(expert_capacity_factor * (config['block_size'] / num_experts)),
                 group=group,
+                # Add quantum experts
+                experts=torch.nn.ModuleList([
+                    QuantumExpert(
+                        input_dim=config['n_embd'],
+                        output_dim=config['n_embd'],
+                        n_qubits=int(np.log2(config['n_embd']))
+                    ) for _ in range(num_experts)
+                ])
             ) for _ in range(config['n_layer'])
         ])
         
@@ -558,10 +564,13 @@ class DeepSeekQNN(torch.nn.Module):
         return output
 
     def _forward_impl(self, x, pos_emb, targets=None):
-        # Apply dropouts even during inference for Monte Carlo dropout
-        # Ensure pos_emb is truncated to match x's sequence length
-        batch_size = x.size(0)  # Or pos_emb.size(0) — both should be the same
-        feature_dim = x.size(2)  # Get the feature dimension (last dimension)
+        """Forward implementation with enhanced MoE routing and load balancing"""
+        batch_size = x.size(0)
+        feature_dim = x.size(2)
+        
+        # Track expert usage for load balancing
+        expert_counts = torch.zeros(num_experts, device=x.device)
+        aux_loss = 0.0
 
         # Check if x and pos_emb need padding/trimming
         if x.size(1) > pos_emb.size(1):
@@ -583,11 +592,24 @@ class DeepSeekQNN(torch.nn.Module):
         # Apply sparse attention with dropout
         x = self.attn_dropout(self.sparse_attention(q, k, v))
         
-        # Apply MoE layers
+        # Apply MoE layers with load balancing and quantum experts
         moe_loss = 0
-        for moe_layer in self.moe_layers:
-            x, l = moe_layer(x)
-            moe_loss += l
+        for i, moe_layer in enumerate(self.moe_layers):
+            # Get expert outputs and auxiliary losses
+            x, aux_l, expert_mask = moe_layer(x)
+            moe_loss += aux_l
+            
+            # Track expert usage
+            expert_counts += expert_mask.sum(dim=0)
+            
+            # Add load balancing loss from DeepSeek paper
+            expert_probs = expert_counts / expert_counts.sum()
+            target_probs = torch.ones_like(expert_probs) / num_experts
+            load_balance_loss = F.kl_div(
+                expert_probs.log(), target_probs,
+                reduction='batchmean'
+            )
+            moe_loss += 0.01 * load_balance_loss
             
         x = self.ln_f(x)
         x = self.final_dropout(x)
