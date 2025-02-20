@@ -3,8 +3,12 @@ import torch.nn as nn
 from typing import List, Dict, Any
 import numpy as np
 
-class QuantumAwareOptimizer(torch.optim.Optimizer):
-    """Optimizer implementing quantum-inspired optimization with proper constraints"""
+class QuantumInspiredOptimizer(torch.optim.Optimizer):
+    """Classical optimizer using quantum-inspired optimization techniques
+    
+    Note: This is NOT a true quantum optimizer. It uses classical approximations
+    of quantum concepts that may provide computational benefits, but cannot
+    achieve true quantum speedups or advantages."""
     
     def __init__(self, params, lr=1e-3, momentum=0.9, damping=0.01, 
                  n_particles=10, quantum_temp=0.1):

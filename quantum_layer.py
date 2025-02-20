@@ -4,8 +4,12 @@ import torch.nn.functional as F
 import numpy as np
 from typing import List, Tuple
 
-class QuantumLayer(nn.Module):
-    """Quantum layer that simulates quantum operations with error correction"""
+class QuantumInspiredLayer(nn.Module):
+    """Classical layer using quantum-inspired algorithms and techniques.
+    
+    Note: This is NOT a true quantum implementation. It uses classical approximations
+    of quantum concepts for potential computational benefits. True quantum operations
+    require actual quantum hardware."""
     
     def __init__(self, n_qubits: int, n_rotations: int):
         super().__init__()
@@ -76,8 +80,12 @@ class QuantumLayer(nn.Module):
         self.prev_state = state.clone()
         return True
 
-    def _classical_to_quantum(self, state: torch.Tensor) -> torch.Tensor:
-        """Convert classical state to quantum state using proper amplitude encoding"""
+    def _classical_to_quantum_inspired(self, state: torch.Tensor) -> torch.Tensor:
+        """Convert classical state to quantum-inspired representation
+        
+        Note: This is a classical approximation, not true quantum state preparation.
+        It mimics some quantum properties but cannot capture true quantum effects
+        like entanglement."""
         batch_size = state.shape[0]
         n_features = state.shape[-1]
         
