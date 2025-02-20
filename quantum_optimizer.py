@@ -65,26 +65,54 @@ class QuantumAdam(torch.optim.Adam):
             for p in group['params']:
                 if p.grad is None:
                     continue
-                
-                # Quantum phase estimation
-                phase = torch.angle(torch.exp(1j * p))
-                
-                # Quantum momentum
+                    
                 state = self.state[p]
-                if 'quantum_momentum' not in state:
-                    state['quantum_momentum'] = torch.zeros_like(p)
                 
-                # Update with quantum effects
-                quantum_update = (
+                # Initialize quantum state if needed
+                if 'quantum_state' not in state:
+                    state['quantum_state'] = torch.zeros_like(p, dtype=torch.cfloat)
+                    state['quantum_momentum'] = torch.zeros_like(p)
+                    state['quantum_phase'] = torch.zeros_like(p)
+                    state['quantum_energy'] = torch.zeros_like(p)
+                
+                # Quantum phase estimation using QPE algorithm
+                # Convert parameter to quantum state
+                quantum_state = torch.exp(1j * p)
+                
+                # Apply quantum Fourier transform
+                qft_state = torch.fft.fft2(quantum_state)
+                phase = torch.angle(qft_state)
+                
+                # Phase kickback
+                state['quantum_phase'] = 0.9 * state['quantum_phase'] + 0.1 * phase
+                
+                # Calculate quantum energy
+                energy = torch.abs(qft_state) ** 2
+                state['quantum_energy'] = 0.9 * state['quantum_energy'] + 0.1 * energy
+                
+                # Quantum momentum with phase and energy
+                quantum_momentum = (
                     self.quantum_factor * 
-                    torch.sin(phase) * 
-                    state['quantum_momentum']
+                    torch.sin(state['quantum_phase']) * 
+                    torch.sqrt(state['quantum_energy'])
                 )
                 
-                p.add_(quantum_update)
+                # Update quantum momentum with uncertainty principle
                 state['quantum_momentum'] = (
                     0.9 * state['quantum_momentum'] + 
-                    0.1 * quantum_update
+                    0.1 * quantum_momentum
                 )
+                
+                # Apply quantum correction
+                quantum_update = (
+                    state['quantum_momentum'] * torch.cos(state['quantum_phase']) +
+                    quantum_momentum * torch.sin(state['quantum_phase'])
+                )
+                
+                # Update parameter with quantum effects
+                p.add_(quantum_update)
+                
+                # Update quantum state
+                state['quantum_state'] = torch.exp(1j * p)
         
         return loss

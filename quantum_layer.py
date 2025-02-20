@@ -95,20 +95,103 @@ class QuantumLayer(nn.Module):
     
     def _apply_error_correction(self, state: torch.Tensor) -> torch.Tensor:
         """Apply quantum error correction following equations.tex formalism"""
-        # Encode state: |ψ_encoded⟩ = C|ψ_in⟩
+        # Encode state using stabilizer code
+        # |ψ_encoded⟩ = C|ψ_in⟩ where C is the encoding circuit
         encoded_state = torch.einsum('ijk,bj->bik', self.error_correction_code, state)
         
-        # Measure syndrome: syndrome = M|ψ_encoded⟩
-        syndrome = torch.einsum('ij,bjk->bik', self.syndrome_measurement, encoded_state)
+        # Apply noise channel
+        noisy_state = self._apply_noise(encoded_state)
         
-        # Apply correction based on syndrome measurement:
-        # |ψ_corrected⟩ = |ψ_encoded⟩_flip if syndrome > 0
-        #                = |ψ_encoded⟩ otherwise
-        corrected_state = torch.where(
-            syndrome > 0,
-            encoded_state.flip(-1),  # Bit flip correction
-            encoded_state  # No correction needed
+        # Measure syndrome operators
+        # syndrome = M|ψ_noisy⟩ where M are the syndrome measurements
+        syndrome_x = torch.einsum('ij,bjk->bik', self.syndrome_measurement[:, :, 0], noisy_state)
+        syndrome_z = torch.einsum('ij,bjk->bik', self.syndrome_measurement[:, :, 1], noisy_state)
+        
+        # Stabilizer measurements
+        stabilizer_x = (syndrome_x > 0).float()
+        stabilizer_z = (syndrome_z > 0).float()
+        
+        # Error detection using syndrome pattern
+        error_pattern = torch.cat([stabilizer_x, stabilizer_z], dim=-1)
+        
+        # Lookup recovery operation from syndrome table
+        recovery_ops = self._get_recovery_operations(error_pattern)
+        
+        # Apply recovery operations
+        corrected_state = torch.zeros_like(noisy_state)
+        for i in range(recovery_ops.size(0)):
+            # Apply X gates
+            x_correction = recovery_ops[i, :, 0]
+            corrected_state[i] = torch.where(x_correction.unsqueeze(-1) > 0,
+                                           noisy_state[i].flip(-1),
+                                           noisy_state[i])
+            
+            # Apply Z gates
+            z_correction = recovery_ops[i, :, 1]
+            corrected_state[i] = torch.where(z_correction.unsqueeze(-1) > 0,
+                                           -corrected_state[i],
+                                           corrected_state[i])
+            
+        # Verify correction using fidelity
+        fidelity = torch.abs(torch.sum(corrected_state.conj() * encoded_state, dim=-1))
+        
+        # If fidelity is too low, try alternative correction
+        alt_correction = torch.where(
+            fidelity < 0.9,
+            self._alternative_correction(noisy_state, error_pattern),
+            corrected_state
         )
+        
+        return alt_correction
+        
+    def _get_recovery_operations(self, error_pattern: torch.Tensor) -> torch.Tensor:
+        """Get recovery operations from syndrome lookup table"""
+        # Initialize recovery operations
+        batch_size = error_pattern.size(0)
+        recovery = torch.zeros((batch_size, self.n_qubits, 2), device=error_pattern.device)
+        
+        # Syndrome lookup table (pre-computed)
+        # This could be expanded to handle more error patterns
+        for i in range(batch_size):
+            pattern = error_pattern[i]
+            if torch.all(pattern == 0):
+                continue  # No error detected
+            
+            # Single qubit errors
+            for q in range(self.n_qubits):
+                # X error on qubit q
+                if pattern[q] == 1 and pattern[q + self.n_qubits] == 0:
+                    recovery[i, q, 0] = 1  # Apply X correction
+                # Z error on qubit q
+                elif pattern[q] == 0 and pattern[q + self.n_qubits] == 1:
+                    recovery[i, q, 1] = 1  # Apply Z correction
+                # Y error on qubit q
+                elif pattern[q] == 1 and pattern[q + self.n_qubits] == 1:
+                    recovery[i, q, 0] = 1  # Apply both X and Z
+                    recovery[i, q, 1] = 1
+        
+        return recovery
+        
+    def _alternative_correction(self, state: torch.Tensor, error_pattern: torch.Tensor) -> torch.Tensor:
+        """Try alternative error correction strategy when primary fails"""
+        # Implement more sophisticated correction strategies here
+        # For now, just try inverting the error pattern
+        inv_pattern = 1 - error_pattern
+        recovery_ops = self._get_recovery_operations(inv_pattern)
+        
+        corrected_state = torch.zeros_like(state)
+        for i in range(recovery_ops.size(0)):
+            x_correction = recovery_ops[i, :, 0]
+            z_correction = recovery_ops[i, :, 1]
+            
+            temp_state = state[i]
+            # Apply corrections in reverse order
+            temp_state = torch.where(z_correction.unsqueeze(-1) > 0,
+                                   -temp_state,
+                                   temp_state)
+            corrected_state[i] = torch.where(x_correction.unsqueeze(-1) > 0,
+                                           temp_state.flip(-1),
+                                           temp_state)
         
         return corrected_state
 
@@ -199,8 +282,8 @@ class QuantumExpert(nn.Module):
 
 def quantum_loss(predictions: torch.Tensor, targets: torch.Tensor, quantum_states: List[torch.Tensor], epsilon: float = 1e-10) -> torch.Tensor:
     """Loss function incorporating quantum coherence via von Neumann entropy"""
-    # Standard cross entropy
-    ce_loss = nn.functional.cross_entropy(predictions, targets)
+    # Standard cross entropy with label smoothing
+    ce_loss = nn.functional.cross_entropy(predictions, targets, label_smoothing=0.1)
     
     # Quantum coherence via von Neumann entropy S(ρ) = -Tr(ρlogρ)
     coherence_loss = 0
@@ -208,12 +291,25 @@ def quantum_loss(predictions: torch.Tensor, targets: torch.Tensor, quantum_state
         # Calculate density matrix ρ = |ψ⟩⟨ψ|
         density_matrix = state @ state.conj().transpose(-2, -1)
         
-        # Get eigenvalues λᵢ of density matrix
-        eigenvals = torch.linalg.eigvals(density_matrix).real
+        # Ensure Hermiticity
+        density_matrix = 0.5 * (density_matrix + density_matrix.conj().transpose(-2, -1))
         
-        # Calculate von Neumann entropy: S(ρ) = -∑ᵢλᵢlog(λᵢ + ε)
-        entropy = -torch.sum(eigenvals * torch.log(eigenvals + epsilon))
-        coherence_loss += entropy
+        # Normalize trace
+        trace = torch.trace(density_matrix)
+        density_matrix = density_matrix / (trace + epsilon)
+        
+        # Get eigenvalues λᵢ of density matrix using stable computation
+        eigenvals = torch.linalg.eigvalsh(density_matrix)  # Use eigvalsh for Hermitian matrix
+        eigenvals = eigenvals.clamp(min=epsilon)  # Ensure positive eigenvalues
+        
+        # Calculate von Neumann entropy: S(ρ) = -∑ᵢλᵢlog(λᵢ)
+        entropy = -torch.sum(eigenvals * torch.log(eigenvals))
+        
+        # Add purity regularization: Tr(ρ²)
+        purity = torch.trace(density_matrix @ density_matrix)
+        purity_reg = (1.0 - purity) * 0.01
+        
+        coherence_loss += entropy + purity_reg
         
     # Combine losses with weighting from equations.tex
     total_loss = ce_loss + 0.1 * coherence_loss
