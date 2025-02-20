@@ -75,7 +75,14 @@ def test_error_correction(physical_error_rates=[0.001, 0.01, 0.05, 0.1],
         for p in physical_error_rates:
             # Create noise model
             noise_model = NoiseModel()
-            noise_model.add_all_qubit_quantum_error(p, ['x','y','z'])
+            # Create proper quantum error channels
+            bit_flip = np.array([[1-p, p], [p, 1-p]])
+            phase_flip = np.array([[1-p, p], [p, 1-p]])
+            combined_error = {'kraus': [np.sqrt(1-p)*np.eye(2), 
+                                      np.sqrt(p/3)*np.array([[0,1],[1,0]]),  # X
+                                      np.sqrt(p/3)*np.array([[0,-1j],[1j,0]]),  # Y 
+                                      np.sqrt(p/3)*np.array([[1,0],[0,-1]])]}  # Z
+            noise_model.add_all_qubit_quantum_error(combined_error, ['x','y','z'])
             
             # Create surface code circuit
             n_qubits = d*d
