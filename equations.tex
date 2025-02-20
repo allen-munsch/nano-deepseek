@@ -154,25 +154,83 @@ with adaptive weighting:
 \alpha = \frac{\sigma_{\text{classical}}^2}{\sigma_{\text{classical}}^2 + \sigma_{\text{quantum}}^2}
 \end{equation}
 
-\section{DeepSeek-Specific Optimizations}
+\section{DeepSeek Integration and Quantum Enhancements}
 
 \subsection{Architecture Integration}
-We adapt the quantum circuits to DeepSeek's transformer architecture:
+We adapt quantum circuits to DeepSeek's transformer architecture, extending the base attention mechanism with quantum operations:
+
+\subsubsection{Quantum-Enhanced Attention}
+The quantum attention mechanism combines classical and quantum components:
 \begin{equation}
-\text{QAttention}(Q,K,V) = \text{SoftMax}\left(\frac{QK^T}{\sqrt{d_k}} + M_Q\right)V
+\text{QAttention}(Q,K,V) = \text{SoftMax}\left(\frac{QK^T}{\sqrt{d_k}} + M_Q + \Phi_Q\right)V
 \end{equation}
-where $M_Q$ is a quantum-generated attention mask:
+
+where $M_Q$ is the quantum-generated attention mask:
 \begin{equation}
 M_Q = |\langle\psi_{\text{out}}|U_{\text{att}}(\theta)|\psi_{\text{in}}\rangle|^2
 \end{equation}
 
-\subsection{Quantum-Enhanced Rotary Embeddings}
-Extended rotary embeddings with quantum phase:
+and $\Phi_Q$ is the quantum phase contribution:
+\begin{equation}
+\Phi_Q = \text{arg}\left(\langle\psi_{\text{out}}|U_{\text{phase}}(\theta)|\psi_{\text{in}}\rangle\right)
+\end{equation}
+
+The unitary operators are parameterized as:
+\begin{equation}
+U_{\text{att}}(\theta) = \prod_{l=1}^L \left(\prod_{i=1}^n R_i(\theta_i^l) \prod_{j=1}^{n-1} \text{CNOT}_{j,j+1}\right)
+\end{equation}
+
+\begin{equation}
+U_{\text{phase}}(\theta) = \prod_{l=1}^L R_z(\theta_l) \otimes R_y(\theta_l)
+\end{equation}
+
+\subsubsection{Mixture of Experts Integration}
+The quantum-enhanced MoE routing mechanism:
+\begin{equation}
+P(e|x) = |\langle e|U_{\text{route}}(\theta)|x\rangle|^2
+\end{equation}
+
+with routing circuit:
+\begin{equation}
+U_{\text{route}}(\theta) = \prod_{l=1}^L \left(H^{\otimes n} R_z(\theta_l) H^{\otimes n}\right)
+\end{equation}
+
+Expert selection is optimized via:
+\begin{equation}
+L_{\text{route}} = -\sum_i \log(P(e_i|x_i)) + \lambda D_{\text{KL}}(P_{\text{uniform}}||P_{\text{used}})
+\end{equation}
+
+\subsection{Quantum-Enhanced Positional Encodings}
+
+\subsubsection{Quantum Rotary Embeddings}
+Extended rotary embedings with quantum phase information:
 \begin{equation}
 \begin{split}
-\text{QRoPE}(x,m) &= x\exp(i\omega_m + i\phi_Q) \\
-\phi_Q &= \text{arg}(\langle\psi_m|U_{\text{phase}}|\psi_0\rangle)
+\text{QRoPE}(x,m) &= x\exp(i\omega_m + i\phi_Q + i\theta_Q) \\
+\phi_Q &= \text{arg}(\langle\psi_m|U_{\text{phase}}|\psi_0\rangle) \\
+\theta_Q &= \text{arg}(\langle\psi_m|U_{\text{rot}}(\omega_m)|\psi_0\rangle)
 \end{split}
+\end{equation}
+
+The rotation operator is defined as:
+\begin{equation}
+U_{\text{rot}}(\omega) = \exp(-i\omega \sigma_z/2) \exp(-i\pi \sigma_x/4)
+\end{equation}
+
+With frequency scaling:
+\begin{equation}
+\omega_m = \frac{m}{10000^{2k/d_{\text{model}}}}
+\end{equation}
+
+\subsubsection{Quantum Phase Tracking}
+Phase coherence is maintained via:
+\begin{equation}
+\Phi_{\text{coherence}} = \left|\frac{1}{N}\sum_{i=1}^N \exp(i\phi_i)\right|^2
+\end{equation}
+
+With phase evolution:
+\begin{equation}
+\frac{d\phi}{dt} = -\frac{i}{\hbar}[H, \phi] + \gamma_{\text{dephase}}
 \end{equation}
 
 \subsection{Sampling Optimization}
