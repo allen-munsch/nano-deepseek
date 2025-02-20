@@ -10,7 +10,7 @@ from typing import Dict, Any, List, Tuple
 
 from probabilistic_layer import Network_DQNN, QuantumExpert, quantum_loss
 from stochastic_optimizer import QuantumAdam, QuantumParticleOptimizer
-from example import Network_DQNN as QuantumProcessor
+from quantum_network import Network_DQNN as QuantumProcessor
 
 import numpy as np
 import torch
