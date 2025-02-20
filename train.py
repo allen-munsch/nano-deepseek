@@ -3,6 +3,7 @@ import os
 import time
 import math
 import pickle
+from datetime import timedelta
 from contextlib import nullcontext
 import platform
 from typing import Dict, Any, List, Tuple
@@ -253,7 +254,7 @@ def setup_training():
             torch.cuda.set_device(device)
             
             # Initialize process group with timeout and proper synchronization
-            timeout = datetime.timedelta(minutes=30)
+            timeout = timedelta(minutes=30)
             init_process_group(
                 backend=backend,
                 rank=world_rank,
