@@ -1,4 +1,4 @@
-from qiskit import QuantumCircuit, QuantumRegister, ClassicalRegister
+from qiskit import QuantumCircuit, QuantumRegister, ClassicalRegister, transpile
 from qiskit.providers.aer import AerSimulator
 from qiskit.quantum_info import Operator, DensityMatrix
 from qiskit.providers.aer.noise import NoiseModel
