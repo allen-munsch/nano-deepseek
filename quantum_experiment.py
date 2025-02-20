@@ -16,6 +16,9 @@ from qiskit_aer.noise import NoiseModel
 import time
 import matplotlib.pyplot as plt
 
+from qiskit.quantum_info import Statevector, DensityMatrix, Operator
+import numpy as np
+
 def test_quantum_attention_speedup(n_qubits_range=[2,3,4,5,6], shots=1000):
     """Test the theoretical quantum attention speedup"""
     classical_times = []
@@ -68,6 +71,7 @@ def test_quantum_attention_speedup(n_qubits_range=[2,3,4,5,6], shots=1000):
 def test_error_correction(physical_error_rates=[0.001, 0.01, 0.05, 0.1], 
                         code_distances=[3,5,7], shots=1000):
     """Test surface code error correction effectiveness"""
+    from qiskit.circuit.library import IGate, XGate, YGate, ZGate
     logical_error_rates = []
     
     for d in code_distances:
@@ -75,19 +79,23 @@ def test_error_correction(physical_error_rates=[0.001, 0.01, 0.05, 0.1],
         for p in physical_error_rates:
             # Create noise model
             noise_model = NoiseModel()
-            # Create proper quantum error channels
+            
+            # Define error probabilities
+            p_x = p/3
+            p_y = p/3
+            p_z = p/3
+            p_i = 1 - p  # probability of no error
+            
+            # Create quantum error using Qiskit gates
             error_ops = [
-                # No error
-                ([np.eye(2), 1-p]),
-                # X error
-                ([np.array([[0, 1], [1, 0]]), p/3]),
-                # Y error
-                ([np.array([[0, -1j], [1j, 0]]), p/3]),
-                # Z error
-                ([np.array([[1, 0], [0, -1]]), p/3])
+                (IGate(), p_i),  # No error
+                (XGate(), p_x),  # Bit flip
+                (YGate(), p_y),  # Y error
+                (ZGate(), p_z)   # Phase flip
             ]
             
-            noise_model.add_all_qubit_quantum_error(error_ops, ['x','y','z'])
+            # Add the error to the noise model
+            noise_model.add_all_qubit_quantum_error(error_ops, ['x', 'y', 'z'])
             
             # Create surface code circuit
             n_qubits = d*d
@@ -158,17 +166,28 @@ def test_quantum_sampling(n_qubits_range=[2,3,4,5], n_samples_range=[10,50,100,5
         for i in range(n_qubits):
             qc.rx(np.random.random(), i)
             qc.ry(np.random.random(), i)
-        true_state = Operator(qc).data
+        
+        # Get true state as a Statevector
+        backend = AerSimulator()
+        job = backend.run(qc)
+        true_state = Statevector.from_instruction(qc)
         
         for n_samples in n_samples_range:
             # Classical Monte Carlo
             c_estimates = []
             for _ in range(n_samples):
-                sample = np.random.randn(2**n_qubits) + 1j*np.random.randn(2**n_qubits)
-                sample = sample / np.linalg.norm(sample)
-                c_estimates.append(sample)
+                # Generate random complex state vector
+                state = np.random.randn(2**n_qubits) + 1j*np.random.randn(2**n_qubits)
+                # Normalize
+                state = state / np.linalg.norm(state)
+                c_estimates.append(state)
+            
+            # Average the estimates
             c_mean = np.mean(c_estimates, axis=0)
-            c_error = 1 - state_fidelity(true_state, c_mean)
+            c_mean = c_mean / np.linalg.norm(c_mean)  # Ensure normalization
+            # Convert to Statevector for comparison
+            c_state = Statevector(c_mean)
+            c_error = 1 - state_fidelity(true_state, c_state)
             c_errors.append(c_error)
             
             # Quantum sampling
@@ -177,7 +196,7 @@ def test_quantum_sampling(n_qubits_range=[2,3,4,5], n_samples_range=[10,50,100,5
             meas_qc.compose(qc, inplace=True)
             meas_qc.measure(qr, cr)
             
-            backend = AerSimulator()
+            # Run quantum circuit
             job = backend.run(meas_qc, shots=n_samples)
             counts = job.result().get_counts()
             
@@ -186,6 +205,9 @@ def test_quantum_sampling(n_qubits_range=[2,3,4,5], n_samples_range=[10,50,100,5
             for bitstring, count in counts.items():
                 idx = int(bitstring, 2)
                 q_state[idx] = np.sqrt(count/n_samples)
+            
+            # Convert to Statevector for comparison
+            q_state = Statevector(q_state)
             q_error = 1 - state_fidelity(true_state, q_state)
             q_errors.append(q_error)
             
