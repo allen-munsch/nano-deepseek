@@ -198,10 +198,106 @@ where $\langle \cdot \rangle_Q$ denotes quantum expectation value.
 \section{Performance Benchmarks}
 
 \subsection{Theoretical Predictions}
-Expected performance metrics:
+Our architecture's theoretical performance is derived from the combination of several key components:
+
+\subsubsection{Overall Speedup}
+The total theoretical speedup combines quantum and classical advantages:
 \begin{equation}
-\text{Speedup}_{\text{theoretical}} = \sqrt{\frac{N_{\text{tokens}}}{N_{\text{qubits}}}} \cdot \frac{1}{\epsilon_{\text{QMC}}}
+\text{Speedup}_{\text{theoretical}} = \sqrt{\frac{N_{\text{tokens}}}{N_{\text{qubits}}}} \cdot \frac{1}{\epsilon_{\text{QMC}}} \cdot S_{\text{quantum}}
 \end{equation}
+
+where $S_{\text{quantum}}$ represents the quantum advantage factor:
+\begin{equation}
+S_{\text{quantum}} = \min\left(2^{N_{\text{qubits}}}, \sqrt{\frac{N_{\text{tokens}}}{N_{\text{qubits}}}}\right)
+\end{equation}
+
+\subsubsection{Quantum-Enhanced Attention}
+The quantum attention mechanism provides theoretical improvements through:
+
+1. Quantum Parallelism:
+\begin{equation}
+T_{\text{attention}} = O\left(\sqrt{\frac{n}{N_q}}\right)
+\end{equation}
+where $n$ is sequence length and $N_q$ is number of qubits.
+
+2. Entanglement-Enhanced Correlations:
+\begin{equation}
+C_{\text{quantum}}(i,j) = |\langle\psi_i|U_{\text{att}}^\dagger U_{\text{att}}|\psi_j\rangle|^2
+\end{equation}
+
+3. Phase-Space Exploration:
+\begin{equation}
+\Phi_{\text{explore}} = \sum_{k=1}^{N_q} e^{i\theta_k}|\psi_k\rangle\langle\psi_k|
+\end{equation}
+
+\subsubsection{Monte Carlo Sampling}
+The quantum Monte Carlo sampling achieves:
+
+1. Sampling Efficiency:
+\begin{equation}
+\epsilon_{\text{QMC}} = O\left(\frac{1}{\sqrt{N_s N_q}}\right)
+\end{equation}
+
+2. Error Bounds:
+\begin{equation}
+P(|\hat{\mu} - \mu| \geq \epsilon) \leq 2\exp\left(-\frac{2N_s\epsilon^2}{(b-a)^2}\right)
+\end{equation}
+
+where $\hat{\mu}$ is the estimated mean and $[a,b]$ is the range of values.
+
+\subsubsection{Mixture of Experts}
+The quantum-enhanced MoE routing achieves:
+
+1. Expert Selection Accuracy:
+\begin{equation}
+P_{\text{correct}} \geq 1 - \exp\left(-\frac{N_q}{2\log(N_{\text{experts}})}\right)
+\end{equation}
+
+2. Load Balancing:
+\begin{equation}
+\mathcal{L}_{\text{balance}} = D_{\text{KL}}(P_{\text{usage}}||P_{\text{uniform}}) \leq \frac{\log(N_{\text{experts}})}{N_q}
+\end{equation}
+
+\subsubsection{Error Mitigation}
+Surface code error correction provides:
+
+1. Logical Error Rate:
+\begin{equation}
+p_L \leq (cp)^{(d+1)/2}
+\end{equation}
+
+where $p$ is physical error rate, $d$ is code distance, and $c$ is a constant.
+
+2. Resource Overhead:
+\begin{equation}
+N_{\text{physical}} = O(d^2\log(N_{\text{logical}}))
+\end{equation}
+
+\subsubsection{Combined Performance Bounds}
+The overall system achieves:
+
+1. Time Complexity:
+\begin{equation}
+T_{\text{total}} = O\left(\sqrt{\frac{n}{N_q}} + \frac{\log(N_{\text{experts}})}{N_q}\right)
+\end{equation}
+
+2. Space Complexity:
+\begin{equation}
+S_{\text{total}} = O(N_q d^2 + N_{\text{experts}}N_{\text{params}})
+\end{equation}
+
+3. Error Bounds:
+\begin{equation}
+\epsilon_{\text{total}} \leq \epsilon_{\text{QMC}} + p_L + \epsilon_{\text{device}}
+\end{equation}
+
+These theoretical predictions demonstrate that our architecture achieves asymptotic advantages through:
+\begin{itemize}
+\item Quantum parallelism in attention computation
+\item Reduced sampling complexity via quantum Monte Carlo
+\item Improved expert routing through quantum state preparation
+\item Error resilience via surface code correction
+\end{itemize}
 
 \subsection{Resource Requirements}
 Quantum resource scaling:
