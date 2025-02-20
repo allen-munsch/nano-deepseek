@@ -9,7 +9,8 @@ This experiment validates key theoretical predictions from equations.tex:
 """
 
 import numpy as np
-from qiskit import QuantumCircuit, QuantumRegister, ClassicalRegister, Aer
+from qiskit import QuantumCircuit, QuantumRegister, ClassicalRegister, transpile
+from qiskit_aer import AerSimulator
 from qiskit.compiler import execute
 from qiskit.providers.aer import QasmSimulator
 from qiskit.quantum_info import state_fidelity, Operator
@@ -47,7 +48,7 @@ def test_quantum_attention_speedup(n_qubits_range=[2,3,4,5,6], shots=1000):
                 qc.cx(i, i+1)
             qc.measure(qr, cr)
             
-        backend = Aer.get_backend('qasm_simulator')
+        backend = AerSimulator()
         job = execute(qc, backend, shots=1)
         quantum_time = time.time() - t0
         quantum_times.append(quantum_time)
@@ -166,7 +167,7 @@ def test_quantum_sampling(n_qubits_range=[2,3,4,5], n_samples_range=[10,50,100,5
             meas_qc.compose(qc, inplace=True)
             meas_qc.measure(qr, cr)
             
-            backend = Aer.get_backend('qasm_simulator')
+            backend = AerSimulator()
             job = execute(meas_qc, backend, shots=n_samples)
             counts = job.result().get_counts()
             
