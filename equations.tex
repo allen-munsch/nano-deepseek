@@ -19,31 +19,65 @@ This document presents the mathematical formulation of a probabilistic language 
 \section*{Introduction}
 This document describes the mathematical formulation of a quantum-enhanced language model implementation. The codebase combines classical transformer architecture with quantum computing concepts, including quantum layers for processing, quantum-inspired optimization, and Monte Carlo methods for uncertainty estimation. Key components include quantum state evolution through rotation gates, error correction mechanisms, and quantum-enhanced attention mechanisms. The implementation focuses on maintaining quantum coherence while providing practical benefits for language modeling tasks.
 
-\section{Network Architecture}
+\section{Quantum Neural Network Architecture}
 
-\subsection{Quantum State Preparation}
-The Network_DQNN layer implements quantum state preparation with proper amplitude encoding and phase tracking:
+\subsection{Network_DQNN Layer}
+The Network_DQNN layer implements a quantum neural network with the following components:
 
-\subsubsection{Amplitude Encoding}
-Classical to quantum state conversion with numerical stability:
+\subsubsection{Quantum State Preparation}
+Classical data is encoded into quantum states through amplitude encoding:
 \begin{equation}
 |\psi_{\text{in}}\rangle = \frac{\sum_{i=0}^{2^n-1} x_i|i\rangle}{\sqrt{\sum_i |x_i|^2 + \epsilon}}
 \end{equation}
 
-where $\epsilon=10^{-8}$ ensures numerical stability. The amplitudes are computed as:
+where $\epsilon=10^{-8}$ ensures numerical stability. The quantum amplitudes are:
 \begin{equation}
 \alpha_i = \text{sign}(x_i)\frac{|x_i|}{\sqrt{\sum_j |x_j|^2 + \epsilon}}e^{i\phi_i}
 \end{equation}
 
-with phases:
+Phase information is preserved through:
 \begin{equation} 
 \phi_i = \text{angle}(x_i + i\epsilon)
 \end{equation}
 
-The normalization is verified:
+With normalization constraint:
 \begin{equation}
 \left|\sum_i |\alpha_i|^2 - 1\right| \leq 10^{-6}
 \end{equation}
+
+\subsubsection{Quantum Circuit Architecture}
+The quantum circuit consists of alternating layers:
+
+1. Single-qubit rotations:
+\begin{equation}
+U_{\text{rot}}(\theta, \phi, \lambda) = 
+\begin{pmatrix}
+\cos(\theta/2) & -e^{i\lambda}\sin(\theta/2) \\
+e^{i\phi}\sin(\theta/2) & e^{i(\phi+\lambda)}\cos(\theta/2)
+\end{pmatrix}
+\end{equation}
+
+2. Controlled-NOT entangling gates:
+\begin{equation}
+\text{CNOT} = |0\rangle\langle0| \otimes I + |1\rangle\langle1| \otimes X
+\end{equation}
+
+3. Controlled-Phase gates:
+\begin{equation}
+\text{CP}(\phi) = |0\rangle\langle0| \otimes I + |1\rangle\langle1| \otimes 
+\begin{pmatrix}
+1 & 0 \\
+0 & e^{i\phi}
+\end{pmatrix}
+\end{equation}
+
+\subsubsection{Parameter Count}
+For a QNN with architecture $[l_1, l_2, ..., l_d]$:
+\begin{equation}
+N_{\text{params}} = \sum_{k=1}^{d-1} (l_k l_{k+1} \cdot 3 + l_k \cdot 3) + l_d \cdot 3
+\end{equation}
+
+where the factor of 3 accounts for rotation angles $(\theta, \phi, \lambda)$ per qubit.
 
 \subsubsection{Quantum Gates}
 The circuit applies a sequence of quantum gates:
@@ -61,8 +95,10 @@ The quantum state evolves through the circuit:
 
 where $U_i$ are unitary quantum operations including single-qubit gates and two-qubit entangling gates.
 
-\subsection{Monte Carlo Quantum Attention}
-The Monte Carlo quantum attention mechanism combines multiple sampling strategies with quantum state evolution:
+\subsection{Quantum-Enhanced Attention}
+The attention mechanism combines quantum state evolution with classical sampling:
+
+\subsubsection{Monte Carlo Quantum Attention}
 \begin{align*}
 \text{logits}_{\text{gumbel}} &= \frac{\text{logits} + \mathcal{G}}{T_g}, \quad T_g = 0.1 \\
 \text{logits}_{\text{temp}} &= \frac{\text{logits}}{T_s}, \quad T_s = \max(0.1, \frac{1}{\sqrt{\text{step}}}) \\
@@ -74,6 +110,22 @@ The Monte Carlo quantum attention mechanism combines multiple sampling strategie
 \end{align*}
 
 where $\text{sparse\_top\_k}=32$ and $\text{step}$ is the current training iteration.
+
+\subsubsection{Quantum State Evolution}
+The attention weights evolve through quantum channels:
+\begin{equation}
+|\psi_{\text{att}}\rangle = U_{\text{att}}(\theta)|\psi_{\text{in}}\rangle
+\end{equation}
+
+where $U_{\text{att}}(\theta)$ is a parameterized quantum circuit:
+\begin{equation}
+U_{\text{att}}(\theta) = \prod_{l=1}^L \left(\prod_{i=1}^n R_i(\theta_i^l) \prod_{j=1}^{n-1} \text{CNOT}_{j,j+1}\right)
+\end{equation}
+
+The quantum attention scores are:
+\begin{equation}
+a_{ij} = |\langle i|U_{\text{att}}^\dagger(\theta)|j\rangle|^2
+\end{equation}
 
 where $\mathcal{G}$ is Gumbel noise, $\mathcal{N}_{\text{explore}} \sim \mathcal{N}(0, 0.05)$ is exploration noise, and $\epsilon=10^{-10}$.
 
@@ -114,21 +166,44 @@ where $\lambda_i$ are eigenvalues of the density matrix $\rho$ and $\epsilon=10^
 
 \section{Optimization}
 
-\subsection{Quantum Adam Optimizer}
-The quantum-enhanced Adam optimizer with quantum state evolution and momentum:
+\subsection{Quantum-Enhanced Optimization}
+
+\subsubsection{Quantum Adam Optimizer}
+The optimizer combines classical Adam with quantum evolution:
 \begin{align*}
 m_t &= \beta_1 m_{t-1} + (1-\beta_1)g_t \\
 v_t &= \beta_2 v_{t-1} + (1-\beta_2)g_t^2 \\
 |\psi_t\rangle &= \frac{e^{i p_t}}{\|e^{i p_t}\|} \\
 \text{Phase}_t &= \text{angle}(|\psi_t\rangle) \\
-\text{Energy}_t &= \|\psi_t\|^2 \\
+\text{Energy}_t &= \|\psi_t\|^2
+\end{align*}
+
+Quantum momentum terms:
+\begin{align*}
 q_t &= q_{\text{factor}} \sin(\text{Phase}_t) \sqrt{\text{Energy}_t} \\
-m^q_t &= \beta_q m^q_{t-1} + (1-\beta_q)q_t \\
+m^q_t &= \beta_q m^q_{t-1} + (1-\beta_q)q_t
+\end{align*}
+
+Parameter updates with unitarity preservation:
+\begin{align*}
 \text{update} &= -\alpha\frac{m_t}{\sqrt{v_t} + \epsilon} + m^q_t \\
 p_{t+1} &= p_t + \frac{\text{update}}{1 + \|\text{update}\|}
 \end{align*}
 
-where $q_{\text{factor}}=0.1$, $\beta_q=0.9$, and the final update preserves unitarity.
+where $q_{\text{factor}}=0.1$, $\beta_q=0.9$.
+
+\subsubsection{Quantum Parameter Space}
+The parameters evolve in the quantum Hilbert space:
+\begin{equation}
+\mathcal{H}_{\text{param}} = \text{span}\{|p_t\rangle : p_t \in \mathbb{R}^d\}
+\end{equation}
+
+With unitary constraints:
+\begin{equation}
+\|U(p_{t+1}) - U(p_t)\|_F \leq \epsilon_{\text{unit}}
+\end{equation}
+
+Where $\|\cdot\|_F$ is the Frobenius norm and $\epsilon_{\text{unit}}=10^{-6}$.
 
 where $\mathcal{QFT}$ enables parallel quantum operations, $\mathcal{U}_t$ is the time evolution operator, $\mathcal{H}$ is the system Hamiltonian, and $\beta_q=0.9$ controls quantum momentum. This formulation achieves $O(n\log n)$ complexity through quantum parallelism.
 
@@ -143,18 +218,40 @@ Cosine decay with linear warmup:
 
 where $\eta_{\text{min}}=3\times10^{-5}$ and $\eta_{\text{max}}=3\times10^{-4}$.
 
-\section{Error Correction and Noise}
+\section{Error Mitigation}
 
-\subsection{Surface Code Error Correction}
-The Surface code error correction process:
+\subsection{Surface Code Implementation}
+The Surface code provides error correction through stabilizer measurements:
+
+\subsubsection{Encoding Process}
 \begin{align*}
 |\psi_{\text{encoded}}\rangle &= \mathcal{S}_d|\psi_{\text{in}}\rangle \\
-|\psi_{\text{noisy}}\rangle &= \mathcal{N}|\psi_{\text{encoded}}\rangle \\
-\text{syndromes} &= \{s_p, s_v\} = \{\langle \psi_{\text{noisy}}|P_i|\psi_{\text{noisy}}\rangle, \langle \psi_{\text{noisy}}|V_j|\psi_{\text{noisy}}\rangle\} \\
+|\psi_{\text{noisy}}\rangle &= \mathcal{N}|\psi_{\text{encoded}}\rangle
+\end{align*}
+
+where $\mathcal{S}_d$ is the Surface code encoding for distance $d$.
+
+\subsubsection{Syndrome Extraction}
+\begin{align*}
+\text{syndromes} &= \{s_p, s_v\} \\
+s_p &= \{\langle \psi_{\text{noisy}}|P_i|\psi_{\text{noisy}}\rangle\} \\
+s_v &= \{\langle \psi_{\text{noisy}}|V_j|\psi_{\text{noisy}}\rangle\}
+\end{align*}
+
+where $P_i$ and $V_j$ are plaquette and vertex stabilizers:
+\begin{align*}
+P_i &= Z_1Z_2Z_3Z_4 \\
+V_j &= X_1X_2X_3X_4
+\end{align*}
+
+\subsubsection{Error Correction}
+\begin{align*}
 \mathcal{C} &= \text{MWPM}(\text{syndromes}) \\
 |\psi_{\text{corrected}}\rangle &= \prod_{c \in \mathcal{C}} X_c Z_c |\psi_{\text{noisy}}\rangle \\
 |\psi_{\text{out}}\rangle &= \mathcal{S}_d^\dagger|\psi_{\text{corrected}}\rangle
 \end{align*}
+
+where MWPM is minimum weight perfect matching on the syndrome graph.
 
 where $\mathcal{S}_d$ is the Surface code encoding for distance $d$, $P_i$ and $V_j$ are plaquette and vertex stabilizer operators, MWPM is minimum weight perfect matching, and $X_c, Z_c$ are Pauli corrections along correction chains $\mathcal{C}$.
 
