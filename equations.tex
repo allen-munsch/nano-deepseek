@@ -3,6 +3,7 @@
 \usepackage{amssymb}
 \usepackage{physics}
 \usepackage{bm}
+\usepackage{natbib}
 
 \title{Mathematical Formulation of DeepSeek with Quantum Enhancement}
 \author{DeepSeek Implementation}
@@ -10,6 +11,10 @@
 
 \begin{document}
 \maketitle
+
+\begin{abstract}
+This document presents the mathematical formulation of a quantum-enhanced language model implementation, building on recent advances in quantum computing for machine learning \citep{bharti2022noisy} and transformer architectures \citep{vaswani2017attention}. The approach combines classical deep learning with quantum processing elements \citep{schuld2019quantum}, demonstrating potential advantages in handling uncertainty \citep{gal2016dropout} and optimization \citep{farhi2018classification}.
+\end{abstract}
 
 \section*{Introduction}
 This document describes the mathematical formulation of a quantum-enhanced language model implementation. The codebase combines classical transformer architecture with quantum computing concepts, including quantum layers for processing, quantum-inspired optimization, and Monte Carlo methods for uncertainty estimation. Key components include quantum state evolution through rotation gates, error correction mechanisms, and quantum-enhanced attention mechanisms. The implementation focuses on maintaining quantum coherence while providing practical benefits for language modeling tasks.
@@ -133,5 +138,8 @@ Mean and uncertainty from MC samples:
 \end{align*}
 
 with $N_{\text{MC}}=8$ samples for evaluation.
+
+\bibliographystyle{plainnat}
+\bibliography{references}
 
 \end{document}
