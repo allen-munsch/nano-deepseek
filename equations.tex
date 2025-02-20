@@ -19,25 +19,30 @@ This document presents the mathematical formulation of a probabilistic language 
 \section*{Introduction}
 This document describes the mathematical formulation of a quantum-enhanced language model implementation. The codebase combines classical transformer architecture with quantum computing concepts, including quantum layers for processing, quantum-inspired optimization, and Monte Carlo methods for uncertainty estimation. Key components include quantum state evolution through rotation gates, error correction mechanisms, and quantum-enhanced attention mechanisms. The implementation focuses on maintaining quantum coherence while providing practical benefits for language modeling tasks.
 
-\section{Model Architecture}
+\section{Network Architecture}
 
-\subsection{Quantum State Preparation and Evolution}
-The quantum layer implements proper quantum state preparation and evolution:
+\subsection{Quantum State Preparation}
+The Network_DQNN layer implements quantum state preparation with proper amplitude encoding and phase tracking:
 
 \subsubsection{Amplitude Encoding}
-Classical to quantum state conversion with proper amplitude encoding:
+Classical to quantum state conversion with numerical stability:
 \begin{equation}
-|\psi_{\text{in}}\rangle = \sum_{i=0}^{2^{\lceil\log_2(n)\rceil}-1} r_i e^{i\theta_i}|i\rangle
+|\psi_{\text{in}}\rangle = \frac{\sum_{i=0}^{2^n-1} x_i|i\rangle}{\sqrt{\sum_i |x_i|^2 + \epsilon}}
 \end{equation}
 
-where amplitudes $\alpha_i$ are computed as:
+where $\epsilon=10^{-8}$ ensures numerical stability. The amplitudes are computed as:
 \begin{equation}
-\alpha_i = \text{sign}(x_i)\frac{|x_i|}{\|\mathbf{x}\|_2}e^{i\phi_i}, \quad \phi_i = \arccos(|x_i|/\|\mathbf{x}\|_2)
+\alpha_i = \text{sign}(x_i)\frac{|x_i|}{\sqrt{\sum_j |x_j|^2 + \epsilon}}e^{i\phi_i}
 \end{equation}
 
-ensuring proper normalization:
+with phases:
+\begin{equation} 
+\phi_i = \text{angle}(x_i + i\epsilon)
+\end{equation}
+
+The normalization is verified:
 \begin{equation}
-\sum_i |\alpha_i|^2 = 1
+\left|\sum_i |\alpha_i|^2 - 1\right| \leq 10^{-6}
 \end{equation}
 
 \subsubsection{Quantum Gates}
@@ -56,16 +61,19 @@ The quantum state evolves through the circuit:
 
 where $U_i$ are unitary quantum operations including single-qubit gates and two-qubit entangling gates.
 
-\subsection{Monte Carlo Attention}
-The Monte Carlo attention mechanism combines multiple sampling strategies:
+\subsection{Monte Carlo Quantum Attention}
+The Monte Carlo quantum attention mechanism combines multiple sampling strategies with quantum state evolution:
 \begin{align*}
-\text{logits}_{\text{gumbel}} &= \frac{\text{logits} + \mathcal{G}}{0.1} \\
-\text{logits}_{\text{temp}} &= \frac{\text{logits}}{0.8} \\
-\text{mask}_{\text{top-k}} &= \text{TopK}(\text{logits}, k=40) \\
+\text{logits}_{\text{gumbel}} &= \frac{\text{logits} + \mathcal{G}}{T_g}, \quad T_g = 0.1 \\
+\text{logits}_{\text{temp}} &= \frac{\text{logits}}{T_s}, \quad T_s = \max(0.1, \frac{1}{\sqrt{\text{step}}}) \\
+\text{mask}_{\text{top-k}} &= \text{TopK}(\text{logits}, k=\text{sparse\_top\_k}) \\
 \text{logits}_{\text{combined}} &= (\text{logits}_{\text{gumbel}} + \text{logits}_{\text{temp}}) \odot \text{mask}_{\text{top-k}} \\
 \text{probs} &= \text{softmax}(\text{logits}_{\text{combined}}) \\
-\text{probs}_{\text{noisy}} &= \text{softmax}(\log(\text{probs} + \epsilon) + \mathcal{N}_{\text{explore}})
+\text{noise} &= \mathcal{N}(0, \sigma_{\text{explore}}), \quad \sigma_{\text{explore}} = 0.05 \\
+\text{probs}_{\text{noisy}} &= \text{softmax}(\log(\text{probs} + \epsilon) + \text{noise})
 \end{align*}
+
+where $\text{sparse\_top\_k}=32$ and $\text{step}$ is the current training iteration.
 
 where $\mathcal{G}$ is Gumbel noise, $\mathcal{N}_{\text{explore}} \sim \mathcal{N}(0, 0.05)$ is exploration noise, and $\epsilon=10^{-10}$.
 
@@ -106,18 +114,21 @@ where $\lambda_i$ are eigenvalues of the density matrix $\rho$ and $\epsilon=10^
 
 \section{Optimization}
 
-\subsection{Quantum Adam with High-Dimensional Processing}
-The quantum-enhanced Adam optimizer leveraging high-dimensional quantum operations:
+\subsection{Quantum Adam Optimizer}
+The quantum-enhanced Adam optimizer with quantum state evolution and momentum:
 \begin{align*}
 m_t &= \beta_1 m_{t-1} + (1-\beta_1)g_t \\
 v_t &= \beta_2 v_{t-1} + (1-\beta_2)g_t^2 \\
-|\psi_t\rangle &= \mathcal{QFT}(e^{i p_t}) \\
-\text{Phase}_t &= \text{diag}(\mathcal{U}_t^\dagger \mathcal{U}_t) \\
-\text{Energy}_t &= |\langle\psi_t|\mathcal{H}|\psi_t\rangle|^2 \\
+|\psi_t\rangle &= \frac{e^{i p_t}}{\|e^{i p_t}\|} \\
+\text{Phase}_t &= \text{angle}(|\psi_t\rangle) \\
+\text{Energy}_t &= \|\psi_t\|^2 \\
 q_t &= q_{\text{factor}} \sin(\text{Phase}_t) \sqrt{\text{Energy}_t} \\
-m^q_t &= \beta_q m^q_{t-1} + (1-\beta_q)\mathcal{QFT}^{-1}(q_t) \\
-p_{t+1} &= p_t - \alpha\frac{m_t}{\sqrt{v_t} + \epsilon} + m^q_t
+m^q_t &= \beta_q m^q_{t-1} + (1-\beta_q)q_t \\
+\text{update} &= -\alpha\frac{m_t}{\sqrt{v_t} + \epsilon} + m^q_t \\
+p_{t+1} &= p_t + \frac{\text{update}}{1 + \|\text{update}\|}
 \end{align*}
+
+where $q_{\text{factor}}=0.1$, $\beta_q=0.9$, and the final update preserves unitarity.
 
 where $\mathcal{QFT}$ enables parallel quantum operations, $\mathcal{U}_t$ is the time evolution operator, $\mathcal{H}$ is the system Hamiltonian, and $\beta_q=0.9$ controls quantum momentum. This formulation achieves $O(n\log n)$ complexity through quantum parallelism.
 
