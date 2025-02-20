@@ -1,0 +1,122 @@
+\documentclass{article}
+\usepackage{amsmath}
+\usepackage{amssymb}
+\usepackage{physics}
+\usepackage{bm}
+
+\title{Mathematical Formulation of Quantum-Enhanced Training}
+\author{DeepSeek Implementation}
+\date{\today}
+
+\begin{document}
+\maketitle
+
+\section{Model Architecture}
+
+\subsection{Quantum State Evolution}
+The quantum state evolution through the network is given by:
+\begin{equation}
+|\psi_{\text{out}}\rangle = \prod_{l=1}^L \mathcal{U}_l(\bm{\theta}_l)|\psi_{\text{in}}\rangle
+\end{equation}
+
+where $\mathcal{U}_l$ represents the unitary operations at layer $l$ with parameters $\bm{\theta}_l$.
+
+\subsection{Attention Mechanism}
+The quantum-enhanced attention mechanism is defined as:
+\begin{equation}
+\text{Attention}(Q,K,V) = \frac{1}{N_{\text{MC}}}\sum_{i=1}^{N_{\text{MC}}} \text{softmax}\left(\frac{QK^T}{\sqrt{d_k}} + \mathcal{G}_i\right)V
+\end{equation}
+
+with Gumbel noise $\mathcal{G}_i$ and Monte Carlo samples $N_{\text{MC}}$.
+
+\subsection{Rotary Embeddings}
+Position-dependent rotation matrices:
+\begin{equation}
+R(\theta)_{m,\text{pos}} = \begin{pmatrix}
+\cos(m\theta_{\text{pos}}) & -\sin(m\theta_{\text{pos}}) \\
+\sin(m\theta_{\text{pos}}) & \cos(m\theta_{\text{pos}})
+\end{pmatrix}
+\end{equation}
+
+where $\theta_{\text{pos}} = 10000^{-2m/d}$.
+
+\section{Loss Functions}
+
+\subsection{Main Loss Components}
+The total loss function combines multiple components:
+\begin{equation}
+\mathcal{L}_{\text{total}} = \frac{1}{N_{\text{accum}}}\left(\mathcal{L}_{\text{main}} + \mathcal{L}_{\text{aux}} + \alpha\mathcal{U} + \beta\mathcal{D} + \gamma\mathcal{L}_{\text{quantum}}\right)
+\end{equation}
+
+where:
+\begin{align*}
+\mathcal{L}_{\text{main}} &= -\sum_{i} y_i \log(\hat{y}_i) \\
+\mathcal{L}_{\text{aux}} &= \text{MoE auxiliary loss} \\
+\mathcal{U} &= \text{Uncertainty term} \\
+\mathcal{D} &= \text{Diversity penalty} \\
+\mathcal{L}_{\text{quantum}} &= \text{Quantum coherence loss}
+\end{align*}
+
+\subsection{Quantum Loss}
+The quantum coherence loss is computed as:
+\begin{equation}
+\mathcal{L}_{\text{quantum}} = -\sum_i \lambda_i \log(\lambda_i)
+\end{equation}
+
+where $\lambda_i$ are eigenvalues of the quantum density matrix.
+
+\section{Optimization}
+
+\subsection{Quantum-Enhanced Adam}
+The quantum-enhanced Adam optimizer updates:
+\begin{align*}
+m_t &= \beta_1 m_{t-1} + (1-\beta_1)g_t \\
+v_t &= \beta_2 v_{t-1} + (1-\beta_2)g_t^2 \\
+\hat{m}_t &= \frac{m_t}{1-\beta_1^t} \\
+\hat{v}_t &= \frac{v_t}{1-\beta_2^t} \\
+\phi_t &= \angle(e^{i\theta_t}) \\
+q_t &= q_{\text{factor}}\sin(\phi_t)m_{\text{quantum}} \\
+\theta_t &= \theta_{t-1} - \alpha\frac{\hat{m}_t}{\sqrt{\hat{v}_t} + \epsilon} + q_t
+\end{align*}
+
+\subsection{Learning Rate Schedule}
+The learning rate follows a warmup and decay schedule:
+\begin{equation}
+\eta_t = \begin{cases}
+\eta_{\text{max}}\frac{t}{t_{\text{warmup}}} & \text{if } t < t_{\text{warmup}} \\
+\eta_{\text{min}} & \text{if } t > t_{\text{max}} \\
+\eta_{\text{min}} + \frac{1}{2}(\eta_{\text{max}}-\eta_{\text{min}})(1 + \cos(\pi\frac{t-t_{\text{warmup}}}{t_{\text{max}}-t_{\text{warmup}}})) & \text{otherwise}
+\end{cases}
+\end{equation}
+
+\section{Quantum Error Correction}
+
+\subsection{Error Syndrome}
+The error syndrome measurement:
+\begin{equation}
+S = \text{Tr}(M|\psi_{\text{encoded}}\rangle\langle\psi_{\text{encoded}}|)
+\end{equation}
+
+\subsection{State Correction}
+The corrected quantum state:
+\begin{equation}
+|\psi_{\text{corrected}}\rangle = \mathcal{R}(S)|\psi_{\text{encoded}}\rangle
+\end{equation}
+
+where $\mathcal{R}(S)$ is the recovery operation based on syndrome $S$.
+
+\section{Monte Carlo Uncertainty}
+
+\subsection{Prediction Uncertainty}
+The uncertainty in predictions:
+\begin{equation}
+\sigma^2 = \frac{1}{N_{\text{MC}}-1}\sum_{i=1}^{N_{\text{MC}}}(\hat{y}_i - \bar{y})^2
+\end{equation}
+
+\subsection{Diversity Penalty}
+The diversity penalty term:
+\begin{equation}
+\mathcal{D} = -\beta\text{std}(\{\hat{y}_i\}_{i=1}^{N_{\text{MC}}})
+\end{equation}
+
+\end{document}
